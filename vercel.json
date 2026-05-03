@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/pipeline/rescore",
+      "schedule": "17 8 * * *"
+    },
+    {
+      "path": "/api/pipeline/run",
+      "schedule": "43 8 * * *"
+    }
+  ]
+}
