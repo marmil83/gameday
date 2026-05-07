@@ -168,6 +168,93 @@ function ScoreBar({ label, score, weight }: { label: string; score: number; weig
   );
 }
 
+// ─── Promo display helpers ─────────────────────────────────────────────────
+
+type PromoLike = { promo_type?: string | null; promo_item?: string | null; promo_description?: string | null };
+
+function PromoIcon({ type }: { type?: string | null }) {
+  // 16x16 monochrome stroke icons — color set by parent
+  const common = { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 };
+  switch (type) {
+    case 'giveaway':
+      return (
+        <svg {...common}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V6a2 2 0 10-2 2h2zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"/></svg>
+      );
+    case 'fireworks':
+      return (
+        <svg {...common}><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6l2.1 2.1M5.6 18.4l2.1-2.1m8.6-8.6l2.1-2.1"/></svg>
+      );
+    case 'theme_night':
+      return (
+        <svg {...common}><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+      );
+    case 'family_promo':
+      return (
+        <svg {...common}><path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6 5.87v-2a4 4 0 00-4-4H7a4 4 0 00-4 4v2m9-9a4 4 0 100-8 4 4 0 000 8zm6 0a3 3 0 100-6 3 3 0 000 6z"/></svg>
+      );
+    case 'food_bev_promo':
+      return (
+        <svg {...common}><path strokeLinecap="round" strokeLinejoin="round" d="M5 3l1 14a2 2 0 002 2h8a2 2 0 002-2l1-14M5 3h14M5 3l-1-1m15 1l1-1M9 7v8m6-8v8"/></svg>
+      );
+    case 'special_ticket':
+      return (
+        <svg {...common}><path strokeLinecap="round" strokeLinejoin="round" d="M15 5v2m0 4v2m0 4v2M5 5h14a2 2 0 012 2v3a2 2 0 100 4v3a2 2 0 01-2 2H5a2 2 0 01-2-2v-3a2 2 0 100-4V7a2 2 0 012-2z"/></svg>
+      );
+    default:
+      return (
+        <svg {...common}><path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.196-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/></svg>
+      );
+  }
+}
+
+function titleCase(s: string) {
+  return s.replace(/\w\S*/g, t => t[0].toUpperCase() + t.slice(1).toLowerCase());
+}
+
+function getPromoTitle(promo: PromoLike): string {
+  const item = promo.promo_item?.trim();
+  switch (promo.promo_type) {
+    case 'giveaway':
+      return item ? `${titleCase(item)} Giveaway` : 'Fan Giveaway';
+    case 'fireworks':
+      return 'Post-Game Fireworks';
+    case 'theme_night':
+      return item ? `${titleCase(item)} Night` : 'Theme Night';
+    case 'family_promo':
+      return item ? titleCase(item) : 'Family Day';
+    case 'food_bev_promo':
+      return item ? titleCase(item) : 'Food & Drink Deal';
+    case 'special_ticket':
+      return item ? titleCase(item) : 'Special Ticket Package';
+    default:
+      return item ? titleCase(item) : 'Promotion';
+  }
+}
+
+function getPromoDetail(promo: PromoLike, promoClarity?: string | null): string | null {
+  // Prefer the AI-written practical sentence (arrival timing, eligibility, etc.)
+  if (promoClarity && promoClarity.trim()) return promoClarity.trim();
+  const desc = promo.promo_description?.trim();
+  // Skip the description if it just restates the title
+  if (desc && getPromoTitle(promo).toLowerCase() !== desc.toLowerCase()) return desc;
+  return null;
+}
+
+// ─── Price comparison helpers ──────────────────────────────────────────────
+
+function getSavings(score: GameCardType['score'], lowestPrice: number | null): { pct: number; avg: number } | null {
+  if (!lowestPrice || !score?.score_breakdown) return null;
+  const breakdown = score.score_breakdown as { price?: { reasoning?: string } };
+  const reasoning = breakdown.price?.reasoning ?? '';
+  // Reasoning can read "Great value at $22 (typical: $55)" or legacy "$22 vs avg $55".
+  // Extract every $-prefixed number — the avg is the LAST one in the string.
+  const matches = [...reasoning.matchAll(/\$(\d+(?:\.\d+)?)/g)];
+  if (matches.length < 2) return null;
+  const avg = parseFloat(matches[matches.length - 1][1]);
+  if (!avg || lowestPrice >= avg) return null;
+  return { pct: Math.round((1 - lowestPrice / avg) * 100), avg };
+}
+
 function getCalloutBanner(
   score: GameCardType['score'],
   tags: GameCardType['tags'],
@@ -197,6 +284,10 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
   const [showTickets, setShowTickets] = useState(false);
 
   const callout = getCalloutBanner(score, tags, insights);
+  const priceScore = Number(score?.price_score) || 0;
+  const isGreatDeal = priceScore >= 8 && lowestPrice != null;
+  const savings = getSavings(score, lowestPrice);
+  const extraPromoCount = (promotions?.length || 0) - 1;
 
   const dbSourceNames = new Set(all_pricing.map(s => s.source_name));
 
@@ -339,16 +430,25 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
           {lowestPrice ? (
             <>
               <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-bold tracking-tight" style={{ color: '#1d1d1f' }}>
+                <span className="text-3xl font-bold tracking-tight" style={{ color: isGreatDeal ? '#1f8a3d' : '#1d1d1f' }}>
                   ${lowestPrice}
                 </span>
                 <span className="text-xs" style={{ color: '#86868b' }}>
                   from · {getPricingLabel(pricing)}
                 </span>
               </div>
-              {insights?.price_insight && (
+              {savings && savings.pct >= 20 ? (
+                <div className="flex items-center gap-1 mt-1.5">
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="#1f8a3d" strokeWidth={3}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                  </svg>
+                  <span className="text-xs font-semibold" style={{ color: '#1f8a3d' }}>
+                    {savings.pct}% below typical {game.league} (${savings.avg})
+                  </span>
+                </div>
+              ) : insights?.price_insight ? (
                 <p className="text-xs mt-1" style={{ color: '#86868b' }}>{insights.price_insight}</p>
-              )}
+              ) : null}
             </>
           ) : (
             <p className="text-sm" style={{ color: '#aeaeb2' }}>Pricing not yet available</p>
@@ -367,11 +467,33 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
 
       {/* Promo */}
       {topPromo && (
-        <div className="mx-6 mb-4 px-4 py-3 rounded-2xl" style={{ background: '#FFF9EC', border: '1px solid rgba(255,149,0,0.15)' }}>
-          <p className="text-xs font-medium" style={{ color: '#bf6900' }}>
-            {topPromo.promo_type === 'giveaway' ? '🎁 ' : '⭐ '}
-            {insights?.promo_clarity || topPromo.promo_description || topPromo.promo_item}
-          </p>
+        <div
+          className="mx-6 mb-4 px-4 py-3 rounded-2xl flex items-start gap-3"
+          style={{ background: '#FFF9EC', border: '1px solid rgba(255,149,0,0.15)' }}
+        >
+          <div className="shrink-0 mt-0.5" style={{ color: '#bf6900' }}>
+            <PromoIcon type={topPromo.promo_type} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#bf6900' }}>
+                {getPromoTitle(topPromo)}
+              </p>
+              {extraPromoCount > 0 && (
+                <span
+                  className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+                  style={{ background: 'rgba(191,105,0,0.12)', color: '#bf6900' }}
+                >
+                  +{extraPromoCount} more
+                </span>
+              )}
+            </div>
+            {getPromoDetail(topPromo, insights?.promo_clarity) && (
+              <p className="text-xs mt-1 leading-snug" style={{ color: '#8a5500' }}>
+                {getPromoDetail(topPromo, insights?.promo_clarity)}
+              </p>
+            )}
+          </div>
         </div>
       )}
 
