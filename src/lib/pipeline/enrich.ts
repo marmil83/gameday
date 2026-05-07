@@ -200,7 +200,21 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
     isPlayoffs: bigGame.isPlayoffs,
   });
 
-  // 2. Calculate Deal Score with boosted inputs
+  // 2. Combine ESPN detection with Claude's returned context_flags.
+  // ESPN sometimes misses playoff games (future bracket games, recently scheduled matchups).
+  // Claude's answer is the authoritative fallback — if it flagged this as a playoff game,
+  // we trust it for scoring and flag merging even when ESPN returned isPlayoffs: false.
+  const claudeFlags: string[] = enrichment.context_flags || [];
+  const KNOWN_PLAYOFF_ROUNDS = ['first-round', 'conference-semis', 'conference-finals', 'finals'] as const;
+  const isPlayoffsByAnySource = bigGame.isPlayoffs ||
+    claudeFlags.includes('playoff') || claudeFlags.includes('elimination') || claudeFlags.includes('finals');
+  const isEliminationByAnySource = bigGame.isElimination || bigGame.isFinals ||
+    claudeFlags.includes('elimination') || claudeFlags.includes('finals');
+  // Prefer ESPN round (more specific) → Claude round → default to 'first-round' if any source says playoffs
+  const claudeRound = KNOWN_PLAYOFF_ROUNDS.find(r => claudeFlags.includes(r)) ?? null;
+  const effectivePlayoffRound = bigGame.playoffRound ?? claudeRound ?? (isPlayoffsByAnySource ? 'first-round' : null);
+
+  // 3. Calculate Deal Score with boosted inputs
   const scoreResult = calculateDealScore({
     game: game as Game,
     pricing,
@@ -208,27 +222,27 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
     isOutdoor,
     weatherScore: boostedWeatherScore,
     teamQuality: boostedTeamQuality,
-    isPlayoffs: bigGame.isPlayoffs,
-    isElimination: bigGame.isElimination || bigGame.isFinals,
+    isPlayoffs: isPlayoffsByAnySource,
+    isElimination: isEliminationByAnySource,
     isOpeningDay: bigGame.isOpeningDay,
-    playoffRound: bigGame.playoffRound,
+    playoffRound: effectivePlayoffRound,
     timezone: tz,
   });
 
-  // 3. Merge big game flags into AI context_flags
+  // 4. Merge big game flags into AI context_flags
   const bigGameFlags: string[] = [];
-  if (bigGame.isPlayoffs) bigGameFlags.push('playoff');
-  if (bigGame.isElimination) bigGameFlags.push('elimination');
+  if (isPlayoffsByAnySource) bigGameFlags.push('playoff');
+  if (isEliminationByAnySource) bigGameFlags.push('elimination');
   if (bigGame.isFinals) bigGameFlags.push('finals');
   if (bigGame.seriesGameNumber === 7) bigGameFlags.push('game-7');
   if (bigGame.isRivalry) bigGameFlags.push('rivalry');
   if (bigGame.isOpeningDay) bigGameFlags.push('opening-day');
   // Store the round slug directly (e.g. 'conference-semis', 'conference-finals') so rescore.ts
   // can derive the right price baseline without an extra DB query.
-  if (bigGame.playoffRound) bigGameFlags.push(bigGame.playoffRound);
+  if (effectivePlayoffRound) bigGameFlags.push(effectivePlayoffRound);
   const mergedContextFlags = [...new Set([...(enrichment.context_flags || []), ...bigGameFlags])];
 
-  // 4. Save score
+  // 5. Save score
   await supabase.from('scores').upsert({
     game_id: gameId,
     ...scoreResult,
@@ -244,7 +258,7 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
     },
   }, { onConflict: 'game_id' });
 
-  // 5. Save insights
+  // 6. Save insights
   await supabase.from('game_insights').upsert({
     game_id: gameId,
     expectation_summary: enrichment.expectation_summary,
@@ -256,10 +270,10 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
     context_flags: mergedContextFlags,
     verdict: enrichment.verdict,
     why_worth_it: enrichment.why_worth_it,
-    confidence_score: bigGame.isPlayoffs ? 0.95 : 0.8,
+    confidence_score: isPlayoffsByAnySource ? 0.95 : 0.8,
   }, { onConflict: 'game_id' });
 
-  // 6. Save vibe tags — playoffs always get high-energy
+  // 7. Save vibe tags — playoffs always get high-energy
   await supabase
     .from('tags')
     .delete()
@@ -267,7 +281,7 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
     .eq('source_type', 'ai');
 
   const vibeTags = [...enrichment.vibe_tags];
-  if (bigGame.isPlayoffs && !vibeTags.includes('high-energy')) vibeTags.push('high-energy');
+  if (isPlayoffsByAnySource && !vibeTags.includes('high-energy')) vibeTags.push('high-energy');
 
   for (const tag of vibeTags) {
     await supabase.from('tags').upsert({
@@ -278,9 +292,9 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
     }, { onConflict: 'game_id,tag_name' });
   }
 
-  // 7. Auto-feature elimination games and finals
+  // 8. Auto-feature elimination games and finals
   const updates: Record<string, unknown> = { pipeline_status: 'enriched' };
-  if (bigGame.isElimination || bigGame.isFinals) updates.is_featured = true;
+  if (isEliminationByAnySource) updates.is_featured = true;
 
   await supabase
     .from('games')
