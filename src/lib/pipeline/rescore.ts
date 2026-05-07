@@ -173,7 +173,9 @@ async function rescoreGame(supabase: ReturnType<typeof createServiceClient>, gam
   const isPlayoffs = contextFlags.includes('playoff') || contextFlags.includes('elimination') || contextFlags.includes('finals');
   const isElimination = contextFlags.includes('elimination') || contextFlags.includes('finals');
   // Derive playoff round slug from context_flags — enrich.ts stores it directly (e.g. 'conference-semis')
-  const playoffRound = KNOWN_PLAYOFF_ROUNDS.find(r => contextFlags.includes(r)) ?? null;
+  // If playoff but no round known, default to 'first-round' so we never score against regular season prices
+  const detectedRound = KNOWN_PLAYOFF_ROUNDS.find(r => contextFlags.includes(r)) ?? null;
+  const playoffRound = detectedRound ?? (isPlayoffs ? 'first-round' : null);
 
   const { data: awayTeamData } = await supabase
     .from('teams')
