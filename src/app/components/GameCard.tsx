@@ -4,14 +4,10 @@ import { useState } from 'react';
 import type { GameCard as GameCardType, PricingSnapshot } from '@/types/database';
 import { PRICING_LABELS } from '@/lib/constants';
 
-// ── Ticket source config ────────────────────────────────────
-// DB-sourced entries (TickPick, SeatGeek) are merged in at render time.
-// Static entries provide "Visit site" fallback links for major brokers.
-
 interface StaticSource {
   name: string;
   favicon: string;
-  label?: string;                           // e.g. "Official seller"
+  label?: string;
   getUrl: (homeTeam: string, awayTeam: string) => string;
 }
 
@@ -81,43 +77,34 @@ function TicketSourceRow({
       href={url}
       target="_blank"
       rel="noopener noreferrer"
-      className="flex items-center gap-3 py-2.5 px-1 hover:bg-gray-50 rounded-lg transition-colors group"
+      className="flex items-center gap-3 py-3 px-1 rounded-xl transition-colors group"
+      style={{ WebkitTapHighlightColor: 'transparent' }}
     >
-      {/* Favicon */}
       <img
         src={favicon}
         alt={name}
         className="w-5 h-5 rounded object-contain shrink-0"
-        onError={(e) => {
-          (e.target as HTMLImageElement).style.display = 'none';
-        }}
+        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
       />
-
-      {/* Name + badge */}
       <div className="flex items-center gap-2 flex-1 min-w-0">
-        <span className="text-sm font-medium text-gray-800">{name}</span>
+        <span className="text-sm font-medium" style={{ color: '#1d1d1f' }}>{name}</span>
         {badge && (
-          <span className="inline-flex items-center gap-1 text-[10px] font-medium text-blue-600 border border-blue-200 rounded-full px-1.5 py-0.5 shrink-0">
-            <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-            </svg>
+          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full" style={{ background: '#F2F2F7', color: '#86868b' }}>
             {badge}
           </span>
         )}
         {isAllin && (
-          <span className="text-[10px] text-emerald-600 font-medium shrink-0">all-in</span>
+          <span className="text-[10px] font-medium" style={{ color: '#34c759' }}>all-in</span>
         )}
       </div>
-
-      {/* Price or Visit site */}
-      <div className="flex items-center gap-1.5 shrink-0">
+      <div className="flex items-center gap-1 shrink-0">
         {price != null ? (
-          <span className="text-sm font-bold text-gray-900">from ${price}</span>
+          <span className="text-sm font-semibold" style={{ color: '#1d1d1f' }}>from ${price}</span>
         ) : (
-          <span className="text-sm text-blue-600 font-medium">Visit site</span>
+          <span className="text-sm font-medium" style={{ color: '#0071e3' }}>Visit site</span>
         )}
-        <svg className="w-4 h-4 text-gray-400 group-hover:text-gray-600 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        <svg className="w-3.5 h-3.5 ml-0.5" style={{ color: '#aeaeb2' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
         </svg>
       </div>
     </a>
@@ -126,7 +113,6 @@ function TicketSourceRow({
 
 function formatTime(isoString: string, timezone?: string): string {
   const date = new Date(isoString);
-  // Detect placeholder times (e.g. midnight or 3:30 AM local = TBD from SeatGeek)
   const localHour = parseInt(
     new Intl.DateTimeFormat('en-US', {
       timeZone: timezone || undefined,
@@ -135,7 +121,6 @@ function formatTime(isoString: string, timezone?: string): string {
     }).format(date)
   );
   if (localHour >= 0 && localHour < 5) return 'TBD';
-
   return date.toLocaleTimeString('en-US', {
     hour: 'numeric',
     minute: '2-digit',
@@ -154,13 +139,6 @@ function formatDate(isoString: string, timezone?: string): string {
   });
 }
 
-function getDealScoreColor(score: number): string {
-  if (score >= 8) return 'bg-emerald-500';
-  if (score >= 6) return 'bg-green-500';
-  if (score >= 4) return 'bg-yellow-500';
-  return 'bg-gray-400';
-}
-
 function getDealScoreLabel(score: number): string {
   if (score >= 8) return 'Great Deal';
   if (score >= 6) return 'Good Deal';
@@ -170,59 +148,43 @@ function getDealScoreLabel(score: number): string {
 
 function getPricingLabel(pricing: GameCardType['pricing']): string {
   if (!pricing?.displayed_price) return '';
-  const label = PRICING_LABELS[pricing.pricing_transparency] || 'before fees';
-  return label;
-}
-
-function getWeatherColor(score: number): string {
-  if (score >= 8) return 'text-emerald-600';
-  if (score >= 6) return 'text-green-600';
-  if (score >= 4) return 'text-yellow-600';
-  return 'text-red-600';
+  return PRICING_LABELS[pricing.pricing_transparency] || 'before fees';
 }
 
 function ScoreBar({ label, score, weight }: { label: string; score: number; weight: number }) {
   const pct = (score / 10) * 100;
-  const color = score >= 7 ? 'bg-emerald-500' : score >= 5 ? 'bg-yellow-500' : 'bg-red-400';
   return (
-    <div className="flex items-center gap-2 text-xs">
-      <span className="w-20 text-gray-500 shrink-0">{label}</span>
-      <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+    <div className="flex items-center gap-3 text-xs">
+      <span className="w-20 shrink-0" style={{ color: '#86868b' }}>{label}</span>
+      <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: '#F2F2F7' }}>
+        <div
+          className="h-full rounded-full transition-all duration-500"
+          style={{ width: `${pct}%`, background: '#1d1d1f' }}
+        />
       </div>
-      <span className="w-8 text-right font-medium text-gray-700">{score.toFixed(1)}</span>
-      <span className="w-8 text-right text-gray-400">{Math.round(weight * 100)}%</span>
+      <span className="w-8 text-right font-medium" style={{ color: '#1d1d1f' }}>{score.toFixed(1)}</span>
+      <span className="w-8 text-right" style={{ color: '#aeaeb2' }}>{Math.round(weight * 100)}%</span>
     </div>
   );
 }
 
-// Returns a highlighted banner label when a game is an exceptional value or high-stakes event.
-// Only one banner is shown — playoff/big game takes priority over price.
 function getCalloutBanner(
   score: GameCardType['score'],
   tags: GameCardType['tags'],
   insights: GameCardType['insights'],
-): { text: string; className: string } | null {
+): { text: string; accent: string } | null {
   const priceScore = Number(score?.price_score) || 0;
   const contextFlags = (insights?.context_flags as string[]) || [];
   const tagNames = tags?.map(t => t.tag_name) || [];
 
-  if (contextFlags.includes('game-7'))
-    return { text: '🏆 Game 7', className: 'bg-red-600 text-white' };
-  if (contextFlags.includes('elimination'))
-    return { text: '⚡ Elimination Game', className: 'bg-red-600 text-white' };
-  if (contextFlags.includes('finals'))
-    return { text: '🏆 Finals', className: 'bg-red-600 text-white' };
-  if (contextFlags.includes('conference-finals'))
-    return { text: '🏆 Conference Finals', className: 'bg-orange-600 text-white' };
-  if (contextFlags.includes('playoff'))
-    return { text: '🏒 Playoff Game', className: 'bg-orange-500 text-white' };
-  if (contextFlags.includes('rivalry'))
-    return { text: '🔥 Rivalry Game', className: 'bg-purple-600 text-white' };
-  if (contextFlags.includes('opening-day'))
-    return { text: '⚾ Opening Day', className: 'bg-blue-600 text-white' };
-  if (priceScore >= 9 || tagNames.includes('cheap-night'))
-    return { text: '💰 Value Game', className: 'bg-emerald-600 text-white' };
+  if (contextFlags.includes('game-7'))        return { text: 'Game 7', accent: '#ff3b30' };
+  if (contextFlags.includes('elimination'))   return { text: 'Elimination Game', accent: '#ff3b30' };
+  if (contextFlags.includes('finals'))        return { text: 'Finals', accent: '#ff3b30' };
+  if (contextFlags.includes('conference-finals')) return { text: 'Conference Finals', accent: '#ff9500' };
+  if (contextFlags.includes('playoff'))       return { text: 'Playoff Game', accent: '#ff9500' };
+  if (contextFlags.includes('rivalry'))       return { text: 'Rivalry Game', accent: '#af52de' };
+  if (contextFlags.includes('opening-day'))   return { text: 'Opening Day', accent: '#0071e3' };
+  if (priceScore >= 9 || tagNames.includes('cheap-night')) return { text: 'Value Game', accent: '#34c759' };
   return null;
 }
 
@@ -236,21 +198,13 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
 
   const callout = getCalloutBanner(score, tags, insights);
 
-  // Build the merged ticket source list:
-  // 1. DB-sourced snapshots (TickPick, SeatGeek) with real prices
-  // 2. Static broker links for everything else
   const dbSourceNames = new Set(all_pricing.map(s => s.source_name));
 
-  // Priced rows from DB, sorted cheapest first
   const pricedRows = all_pricing
     .filter(s => s.lowest_price != null)
     .sort((a, b) => (a.lowest_price ?? 999) - (b.lowest_price ?? 999))
     .map(s => {
-      const meta = SOURCE_DISPLAY[s.source_name] ?? {
-        label: s.source_name,
-        favicon: '',
-        isAllin: false,
-      };
+      const meta = SOURCE_DISPLAY[s.source_name] ?? { label: s.source_name, favicon: '', isAllin: false };
       return {
         key: s.source_name,
         favicon: meta.favicon,
@@ -262,7 +216,6 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
       };
     });
 
-  // "Visit site" rows for DB sources without price (e.g. SeatGeek returning null for playoffs)
   const noPriceDbRows = all_pricing
     .filter(s => s.lowest_price == null && s.affiliate_url)
     .map(s => {
@@ -278,7 +231,6 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
       };
     });
 
-  // Static broker rows — skip any that are already in the DB
   const staticRows = STATIC_TICKET_SOURCES
     .filter(src => !dbSourceNames.has(src.name.toLowerCase().replace(/\s+/g, '')))
     .map(src => ({
@@ -294,68 +246,74 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
   const allTicketRows = [...pricedRows, ...noPriceDbRows, ...staticRows];
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
-      {/* Callout banner (Value Game, Playoff, Rivalry, etc.) */}
+    <div
+      className="bg-white overflow-hidden transition-all duration-200"
+      style={{ borderRadius: '20px', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}
+    >
+      {/* Callout — thin accent bar, not a banner */}
       {callout && (
-        <div className={`px-5 py-1.5 text-xs font-bold tracking-wide ${callout.className}`}>
-          {callout.text}
+        <div className="flex items-center gap-2 px-6 pt-4">
+          <div className="w-1 h-4 rounded-full shrink-0" style={{ background: callout.accent }} />
+          <span className="text-xs font-semibold tracking-wide" style={{ color: callout.accent }}>
+            {callout.text}
+          </span>
         </div>
       )}
 
-      {/* Header: Teams + Time */}
-      <div className="px-5 pt-5 pb-3">
-        <div className="flex items-start justify-between">
-          <div className="flex items-start gap-3 flex-1">
-            {/* Home Team Logo */}
+      {/* Header: Teams + Score */}
+      <div className={`px-6 ${callout ? 'pt-3' : 'pt-6'} pb-4`}>
+        <div className="flex items-start justify-between gap-4">
+
+          {/* Team info */}
+          <div className="flex items-start gap-3 flex-1 min-w-0">
             {home_team_logo && (
               <img
                 src={home_team_logo}
                 alt={game.home_team_name}
-                className="w-10 h-10 object-contain shrink-0 mt-3"
+                className="w-11 h-11 object-contain shrink-0 mt-1"
               />
             )}
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">
-                {game.league} &middot; {formatDate(game.start_time, timezone)}
+              <p className="text-xs font-medium tracking-wider uppercase" style={{ color: '#aeaeb2' }}>
+                {game.league} · {formatDate(game.start_time, timezone)}
               </p>
-              <h3 className="mt-1 text-lg font-bold text-gray-900">
+              <h3 className="mt-1 text-xl font-bold tracking-tight leading-tight" style={{ color: '#1d1d1f' }}>
                 {game.away_team_name === 'TBD'
-                  ? <span className="text-gray-400 italic">Opponent TBD</span>
+                  ? <span style={{ color: '#aeaeb2', fontStyle: 'italic' }}>Opponent TBD</span>
                   : game.away_team_name}
               </h3>
-              <p className="text-sm text-gray-500">
-                @ {game.home_team_name} &middot; {formatTime(game.start_time, timezone)}
+              <p className="text-sm mt-0.5" style={{ color: '#86868b' }}>
+                @ {game.home_team_name} · {formatTime(game.start_time, timezone)}
               </p>
-              <p className="text-xs text-gray-400 mt-0.5">{game.venue}</p>
+              <p className="text-xs mt-0.5" style={{ color: '#aeaeb2' }}>{game.venue}</p>
             </div>
           </div>
 
-          {/* Deal Score Badge (clickable) */}
+          {/* Deal Score — clean black circle */}
           <button
-            className="flex flex-col items-center ml-4 cursor-pointer"
             onClick={() => setShowBreakdown(!showBreakdown)}
+            className="flex flex-col items-center shrink-0"
             aria-label="Show score breakdown"
           >
             <div
-              className={`w-14 h-14 rounded-xl ${getDealScoreColor(dealScore)} flex items-center justify-center ring-2 ring-transparent hover:ring-gray-300 transition-all`}
+              className="w-14 h-14 rounded-full flex items-center justify-center transition-transform duration-150 active:scale-95"
+              style={{ background: '#1d1d1f' }}
             >
-              <span className="text-xl font-bold text-white">
-                {dealScore.toFixed(1)}
-              </span>
+              <span className="text-lg font-bold text-white">{dealScore.toFixed(1)}</span>
             </div>
-            <span className="text-[10px] font-medium text-gray-500 mt-1">
+            <span className="text-[10px] font-medium mt-1.5" style={{ color: '#86868b' }}>
               {getDealScoreLabel(dealScore)}
             </span>
           </button>
         </div>
       </div>
 
-      {/* Score Breakdown (toggled by clicking score badge) */}
+      {/* Score Breakdown */}
       {showBreakdown && score && (
-        <div className="mx-5 mb-3 px-4 py-3 bg-gray-50 rounded-xl border border-gray-100 space-y-2">
+        <div className="mx-6 mb-4 px-4 py-4 rounded-2xl space-y-2.5" style={{ background: '#F2F2F7' }}>
           <div className="flex items-center justify-between mb-1">
-            <span className="text-xs font-semibold text-gray-700">Deal Score Breakdown</span>
-            <span className="text-[10px] text-gray-400">score &middot; weight</span>
+            <span className="text-xs font-semibold" style={{ color: '#1d1d1f' }}>Score Breakdown</span>
+            <span className="text-[10px]" style={{ color: '#aeaeb2' }}>score · weight</span>
           </div>
           <ScoreBar label="Price" score={Number(score.price_score) || 0} weight={0.4} />
           <ScoreBar label="Experience" score={Number(score.experience_score) || 0} weight={0.2} />
@@ -365,56 +323,53 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
             <ScoreBar label="Weather" score={Number(score.context_score) || 0} weight={0.1} />
           )}
           {score.reasoning_summary && (
-            <p className="text-[11px] text-gray-400 pt-1 border-t border-gray-100">
+            <p className="text-[11px] pt-2 border-t" style={{ color: '#86868b', borderColor: 'rgba(0,0,0,0.06)' }}>
               {score.reasoning_summary}
             </p>
           )}
         </div>
       )}
 
-      {/* Price + Weather row */}
-      <div className="px-5 pb-3 flex items-start justify-between">
-        {/* Price */}
+      {/* Divider */}
+      <div className="mx-6" style={{ height: '1px', background: 'rgba(0,0,0,0.05)' }} />
+
+      {/* Price + Weather */}
+      <div className="px-6 py-4 flex items-start justify-between">
         <div>
           {lowestPrice ? (
             <>
               <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-bold text-gray-900">
-                  From ${lowestPrice}
+                <span className="text-3xl font-bold tracking-tight" style={{ color: '#1d1d1f' }}>
+                  ${lowestPrice}
                 </span>
-                <span className="text-xs text-gray-400">
-                  {getPricingLabel(pricing)}
+                <span className="text-xs" style={{ color: '#86868b' }}>
+                  from · {getPricingLabel(pricing)}
                 </span>
               </div>
               {insights?.price_insight && (
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {insights.price_insight}
-                </p>
+                <p className="text-xs mt-1" style={{ color: '#86868b' }}>{insights.price_insight}</p>
               )}
             </>
           ) : (
-            <p className="text-sm text-gray-400">Price not yet available</p>
+            <p className="text-sm" style={{ color: '#aeaeb2' }}>Pricing not yet available</p>
           )}
         </div>
 
-        {/* Weather (outdoor games only) */}
         {insights?.weather_temp_f != null && (
-          <div className={`text-right ${getWeatherColor(Number(insights.weather_score) || 5)}`}>
-            <p className="text-lg font-semibold">
+          <div className="text-right">
+            <p className="text-base font-semibold" style={{ color: '#1d1d1f' }}>
               {insights.weather_icon} {insights.weather_temp_f}°F
             </p>
-            <p className="text-[11px]">
-              {insights.weather_condition}
-            </p>
+            <p className="text-xs mt-0.5" style={{ color: '#86868b' }}>{insights.weather_condition}</p>
           </div>
         )}
       </div>
 
-      {/* Promo highlight */}
+      {/* Promo */}
       {topPromo && (
-        <div className="mx-5 mb-3 px-3 py-2 bg-amber-50 rounded-lg border border-amber-100">
-          <p className="text-xs font-semibold text-amber-700">
-            {topPromo.promo_type === 'giveaway' ? '🎁' : '⭐'}{' '}
+        <div className="mx-6 mb-4 px-4 py-3 rounded-2xl" style={{ background: '#FFF9EC', border: '1px solid rgba(255,149,0,0.15)' }}>
+          <p className="text-xs font-medium" style={{ color: '#bf6900' }}>
+            {topPromo.promo_type === 'giveaway' ? '🎁 ' : '⭐ '}
             {insights?.promo_clarity || topPromo.promo_description || topPromo.promo_item}
           </p>
         </div>
@@ -422,8 +377,8 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
 
       {/* Verdict */}
       {insights?.verdict && (
-        <div className="px-5 pb-3">
-          <p className="text-sm font-semibold text-gray-800 italic">
+        <div className="px-6 pb-3">
+          <p className="text-sm font-semibold leading-snug" style={{ color: '#1d1d1f', fontStyle: 'italic' }}>
             &ldquo;{insights.verdict}&rdquo;
           </p>
         </div>
@@ -431,60 +386,65 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
 
       {/* Why worth it */}
       {insights?.why_worth_it && (
-        <div className="px-5 pb-3">
-          <p className="text-sm text-gray-600">
+        <div className="px-6 pb-4">
+          <p className="text-sm leading-relaxed" style={{ color: '#86868b' }}>
             {insights.why_worth_it}
           </p>
         </div>
       )}
 
-      {/* Tags + Effort */}
-      <div className="px-5 pb-3 flex flex-wrap items-center gap-2">
-        {tags?.map((tag) => (
-          <span
-            key={tag.tag_name}
-            className="inline-block px-2.5 py-0.5 text-xs font-medium rounded-full bg-blue-50 text-blue-700"
-          >
-            {tag.tag_name}
-          </span>
-        ))}
-        {insights?.effort_level && (
-          <span className="inline-block px-2.5 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-600">
-            {insights.effort_level === 'easy' ? 'Easy outing' :
-             insights.effort_level === 'high_effort' ? 'Plan ahead' : 'Moderate effort'}
-          </span>
-        )}
-      </div>
+      {/* Tags */}
+      {(tags?.length || insights?.effort_level) && (
+        <div className="px-6 pb-4 flex flex-wrap gap-2">
+          {tags?.map((tag) => (
+            <span
+              key={tag.tag_name}
+              className="px-3 py-1 text-xs font-medium rounded-full"
+              style={{ background: '#F2F2F7', color: '#86868b' }}
+            >
+              {tag.tag_name}
+            </span>
+          ))}
+          {insights?.effort_level && (
+            <span
+              className="px-3 py-1 text-xs font-medium rounded-full"
+              style={{ background: '#F2F2F7', color: '#86868b' }}
+            >
+              {insights.effort_level === 'easy' ? 'Easy outing' :
+               insights.effort_level === 'high_effort' ? 'Plan ahead' : 'Moderate effort'}
+            </span>
+          )}
+        </div>
+      )}
 
-      {/* Ticket comparison CTA */}
-      <div className="px-5 pb-5">
-        {/* Toggle button */}
+      {/* Ticket CTA */}
+      <div className="px-6 pb-6">
         <button
           onClick={() => setShowTickets(!showTickets)}
-          className="w-full flex items-center justify-between py-3 px-4 bg-gray-900 text-white font-semibold rounded-xl hover:bg-gray-800 transition-colors text-sm"
+          className="w-full flex items-center justify-between py-3.5 px-5 font-semibold text-sm transition-all duration-150 active:scale-[0.98]"
+          style={{
+            background: '#1d1d1f',
+            color: '#ffffff',
+            borderRadius: '100px',
+          }}
         >
-          <span>
-            {lowestPrice ? `Get Tickets from $${lowestPrice}` : 'View Tickets'}
-          </span>
+          <span>{lowestPrice ? `Get Tickets · from $${lowestPrice}` : 'View Tickets'}</span>
           <svg
-            className={`w-5 h-5 transition-transform duration-200 ${showTickets ? 'rotate-180' : ''}`}
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
+            className={`w-4 h-4 transition-transform duration-200 ${showTickets ? 'rotate-180' : ''}`}
+            fill="none" viewBox="0 0 24 24" stroke="currentColor"
           >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
           </svg>
         </button>
 
-        {/* Expanded source list */}
         {showTickets && (
-          <div className="mt-2 border border-gray-100 rounded-xl overflow-hidden bg-white shadow-sm">
+          <div className="mt-3 rounded-2xl overflow-hidden" style={{ background: '#F2F2F7' }}>
             <div className="px-4 pt-3 pb-1">
-              <p className="text-[11px] text-gray-400 font-medium uppercase tracking-wide">
-                Prices include fees where noted
+              <p className="text-[10px] font-medium uppercase tracking-wider" style={{ color: '#aeaeb2' }}>
+                Compare prices
               </p>
             </div>
-            <div className="px-3 pb-3 divide-y divide-gray-50">
+            <div className="px-3 pb-3 divide-y" style={{ borderColor: 'rgba(0,0,0,0.05)' }}>
               {allTicketRows.map(row => (
                 <TicketSourceRow
                   key={row.key}

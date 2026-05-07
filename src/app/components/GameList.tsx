@@ -45,47 +45,50 @@ export default function GameList() {
   const isToday = date === today || !date;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen" style={{ background: '#F2F2F7' }}>
       {/* Header */}
-      <header className="bg-white border-b border-gray-100">
-        <div className="max-w-lg mx-auto px-4 py-4">
+      <header className="bg-white/80 backdrop-blur-md border-b border-black/5 sticky top-0 z-10">
+        <div className="max-w-lg mx-auto px-5 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-xl font-bold text-gray-900">GameDay</h1>
-              <p className="text-xs text-gray-400">Worth the trip?</p>
+              <h1 className="text-lg font-semibold tracking-tight" style={{ color: '#1d1d1f' }}>GameDay</h1>
+              <p className="text-xs mt-0.5" style={{ color: '#86868b' }}>Worth the trip?</p>
             </div>
             <CitySelector currentCity={city} onCityChange={setCity} />
           </div>
         </div>
       </header>
 
-      {/* Headline */}
-      <div className="max-w-lg mx-auto px-4 pt-6 pb-2">
-        <h2 className="text-2xl font-bold text-gray-900">
-          {isToday ? 'Games worth going to today' : `Games on ${new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}`}
+      {/* Headline + date nav */}
+      <div className="max-w-lg mx-auto px-5 pt-8 pb-3">
+        <h2 className="text-3xl font-bold tracking-tight" style={{ color: '#1d1d1f' }}>
+          {isToday
+            ? 'Today\'s Games'
+            : new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
         </h2>
-        <p className="text-sm text-gray-500 mt-1">
+        <p className="text-sm mt-1" style={{ color: '#86868b' }}>
           {cityInfo.name}{cityInfo.state ? `, ${cityInfo.state}` : ''} &middot;{' '}
-          {games.length} {games.length === 1 ? 'game' : 'games'} curated for you
+          {games.length} {games.length === 1 ? 'game' : 'games'}
         </p>
 
-        {/* Date nav */}
-        <div className="flex gap-2 mt-4">
+        {/* Date pills */}
+        <div className="flex gap-2 mt-5">
           {[0, 1, 2].map(offset => {
             const d = new Date();
             d.setDate(d.getDate() + offset);
             const dStr = formatLocalDate(d);
             const label = offset === 0 ? 'Today' : offset === 1 ? 'Tomorrow' : d.toLocaleDateString('en-US', { weekday: 'short' });
+            const active = date === dStr || (offset === 0 && !date);
 
             return (
               <button
                 key={dStr}
                 onClick={() => setDate(dStr)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
-                  date === dStr || (offset === 0 && !date)
-                    ? 'bg-gray-900 text-white'
-                    : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
-                }`}
+                className="px-4 py-1.5 text-sm font-medium rounded-full transition-all duration-200"
+                style={active
+                  ? { background: '#1d1d1f', color: '#ffffff' }
+                  : { background: '#ffffff', color: '#1d1d1f', border: '1px solid rgba(0,0,0,0.1)' }
+                }
               >
                 {label}
               </button>
@@ -95,11 +98,11 @@ export default function GameList() {
       </div>
 
       {/* Game Cards */}
-      <main className="max-w-lg mx-auto px-4 py-4 space-y-4">
+      <main className="max-w-lg mx-auto px-5 py-4 space-y-4">
         {loading ? (
           <div className="space-y-4">
             {[1, 2, 3].map(i => (
-              <div key={i} className="bg-white rounded-2xl h-64 animate-pulse" />
+              <div key={i} className="bg-white rounded-3xl h-72 animate-pulse" style={{ opacity: 0.6 }} />
             ))}
           </div>
         ) : games.length > 0 ? (
@@ -107,18 +110,16 @@ export default function GameList() {
             <GameCard key={gameData.game.id} data={gameData} timezone={cityInfo.timezone} />
           ))
         ) : (
-          <div className="text-center py-16">
-            <p className="text-gray-400 text-lg font-medium">No games found</p>
-            <p className="text-gray-400 text-sm mt-1">
-              Check back later or try a different date
-            </p>
+          <div className="text-center py-20">
+            <p className="text-lg font-medium" style={{ color: '#86868b' }}>No games today</p>
+            <p className="text-sm mt-1" style={{ color: '#86868b' }}>Try a different date</p>
           </div>
         )}
       </main>
 
       {/* Footer */}
-      <footer className="max-w-lg mx-auto px-4 py-8 text-center">
-        <p className="text-xs text-gray-400">
+      <footer className="max-w-lg mx-auto px-5 py-10 text-center">
+        <p className="text-xs" style={{ color: '#aeaeb2' }}>
           Prices may not include all fees. Always verify at checkout.
         </p>
       </footer>
