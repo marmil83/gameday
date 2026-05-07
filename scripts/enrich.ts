@@ -211,7 +211,9 @@ async function enrichGame(game: any) {
   console.log(`  Detecting big game context...`);
   const bigGame = await detectBigGame(game.home_team_name, game.away_team_name, game.league, game.start_time);
   // Playoff-aware price baseline — used for both scoring and AI copy
-  const avgPrice = getPriceBaseline(game.league, bigGame.playoffRound);
+  // Default to 'first-round' when playoff detected but round unknown (ESPN API miss)
+  const effectiveRoundForBaseline = bigGame.playoffRound ?? (bigGame.isPlayoffs ? 'first-round' : null);
+  const avgPrice = getPriceBaseline(game.league, effectiveRoundForBaseline);
   if (bigGame.bigGameLabel) {
     console.log(`  🏆 Big game: ${bigGame.bigGameLabel} (+${bigGame.gameQualityBoost} GQ, +${bigGame.contextBoost} CTX)`);
   }
@@ -331,9 +333,20 @@ IMPORTANT: Team records and streaks are provided above — use ONLY those values
   const baseGameQuality = calcGameQuality(homeTeamData, awayTeamData, game.league);
 
   // Calculate Deal Score — apply big game boosts on top of base scores
-  const price = calcPriceScore(game.league, lowestPrice, bigGame.playoffRound);
-  const experience = calcExperienceScore(promos || [], bigGame.isPlayoffs, bigGame.isElimination || bigGame.isFinals);
-  const timing = calcTimingScore(game.start_time, tz, bigGame.isPlayoffs);
+  // Combine ESPN detection + Claude's context_flags as source of truth for playoff status.
+  // ESPN API may miss games (future dates, schedule not yet indexed), so Claude's judgment acts as fallback.
+  const claudeFlags: string[] = enrichment.context_flags || [];
+  const isPlayoffsByAnySource = bigGame.isPlayoffs ||
+    claudeFlags.includes('playoff') || claudeFlags.includes('elimination') || claudeFlags.includes('finals');
+  const isEliminationByAnySource = bigGame.isElimination || bigGame.isFinals ||
+    claudeFlags.includes('elimination') || claudeFlags.includes('finals');
+  const KNOWN_ROUNDS = ['first-round', 'conference-semis', 'conference-finals', 'finals'] as const;
+  const claudeRound = KNOWN_ROUNDS.find(r => claudeFlags.includes(r)) ?? null;
+  const effectivePlayoffRound = bigGame.playoffRound ?? claudeRound ?? (isPlayoffsByAnySource ? 'first-round' : null);
+
+  const price = calcPriceScore(game.league, lowestPrice, effectivePlayoffRound);
+  const experience = calcExperienceScore(promos || [], isPlayoffsByAnySource, isEliminationByAnySource);
+  const timing = calcTimingScore(game.start_time, tz, isPlayoffsByAnySource);
 
   // Game quality: standings-based baseline + big game boost
   const gameQualityScore = clamp(baseGameQuality.score + bigGame.gameQualityBoost, 0, 10);
