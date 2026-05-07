@@ -139,6 +139,25 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
     game.start_time,
   );
 
+  // Pre-Claude playoff fallback: if a prior enrichment already detected this as
+  // a playoff game (stored in game_insights.context_flags), trust that even when
+  // ESPN now returns isPlayoffs: false. Prevents "playoff-caliber" hedging copy.
+  const KNOWN_PLAYOFF_ROUNDS = ['first-round', 'conference-semis', 'conference-finals', 'finals'] as const;
+  const { data: priorInsights } = await supabase
+    .from('game_insights')
+    .select('context_flags')
+    .eq('game_id', gameId)
+    .single();
+  const priorFlags: string[] = (priorInsights?.context_flags as string[]) || [];
+  const priorSaysPlayoff = priorFlags.includes('playoff') || priorFlags.includes('elimination') || priorFlags.includes('finals');
+  const priorSaysElim = priorFlags.includes('elimination') || priorFlags.includes('finals');
+  const priorRound = KNOWN_PLAYOFF_ROUNDS.find(r => priorFlags.includes(r)) ?? null;
+
+  // Effective values for the Claude call (combine ESPN with prior-enrichment memory)
+  const isPlayoffsForPrompt = bigGame.isPlayoffs || priorSaysPlayoff;
+  const isEliminationForPrompt = bigGame.isElimination || bigGame.isFinals || priorSaysElim;
+  const playoffRoundForPrompt = bigGame.playoffRound ?? priorRound ?? (isPlayoffsForPrompt ? 'first-round' : null);
+
   // Apply big game boosts on top of standings-based team quality
   const boostedTeamQuality = teamQuality !== undefined
     ? Math.min(10, teamQuality + bigGame.gameQualityBoost)
@@ -173,7 +192,7 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
     }),
     dayOfWeek: startTime.toLocaleDateString('en-US', { timeZone: tz, weekday: 'long' }),
     lowestPrice: pricing?.lowest_price ?? null,
-    avgLeaguePrice: getPriceBaseline(game.league, bigGame.playoffRound),
+    avgLeaguePrice: getPriceBaseline(game.league, playoffRoundForPrompt),
     pricingTransparency: pricing?.pricing_transparency || 'unknown',
     promotions: promotions.map(p => ({
       type: p.promo_type || 'unknown',
@@ -191,13 +210,13 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
     homeStreak: homeTeam?.streak ?? null,
     // Big game fields
     bigGameLabel: bigGame.bigGameLabel,
-    isElimination: bigGame.isElimination,
+    isElimination: isEliminationForPrompt,
     isFinals: bigGame.isFinals,
     isRivalry: bigGame.isRivalry,
     rivalryName: bigGame.rivalryName,
     seriesRecord: bigGame.seriesRecord,
     isOpeningDay: bigGame.isOpeningDay,
-    isPlayoffs: bigGame.isPlayoffs,
+    isPlayoffs: isPlayoffsForPrompt,
   });
 
   // 2. Combine ESPN detection with Claude's returned context_flags.
@@ -205,14 +224,13 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
   // Claude's answer is the authoritative fallback — if it flagged this as a playoff game,
   // we trust it for scoring and flag merging even when ESPN returned isPlayoffs: false.
   const claudeFlags: string[] = enrichment.context_flags || [];
-  const KNOWN_PLAYOFF_ROUNDS = ['first-round', 'conference-semis', 'conference-finals', 'finals'] as const;
-  const isPlayoffsByAnySource = bigGame.isPlayoffs ||
+  const isPlayoffsByAnySource = isPlayoffsForPrompt ||
     claudeFlags.includes('playoff') || claudeFlags.includes('elimination') || claudeFlags.includes('finals');
-  const isEliminationByAnySource = bigGame.isElimination || bigGame.isFinals ||
+  const isEliminationByAnySource = isEliminationForPrompt ||
     claudeFlags.includes('elimination') || claudeFlags.includes('finals');
-  // Prefer ESPN round (more specific) → Claude round → default to 'first-round' if any source says playoffs
+  // Prefer ESPN round (most specific) → prior round → Claude round → default if any source says playoffs
   const claudeRound = KNOWN_PLAYOFF_ROUNDS.find(r => claudeFlags.includes(r)) ?? null;
-  const effectivePlayoffRound = bigGame.playoffRound ?? claudeRound ?? (isPlayoffsByAnySource ? 'first-round' : null);
+  const effectivePlayoffRound = bigGame.playoffRound ?? priorRound ?? claudeRound ?? (isPlayoffsByAnySource ? 'first-round' : null);
 
   // 3. Calculate Deal Score with boosted inputs
   const scoreResult = calculateDealScore({

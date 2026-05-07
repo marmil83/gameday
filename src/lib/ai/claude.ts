@@ -146,6 +146,11 @@ export async function enrichGame(context: {
       ? 'For this game: lead with the playoff stakes. Be energetic.'
       : 'The verdict should be genuinely helpful and opinionated.';
 
+  // Hard ban on hedging language for actual playoff games
+  const playoffLanguageRule = context.isPlayoffs
+    ? `\n\nCRITICAL LANGUAGE RULE: This IS the playoffs. Never write "playoff-caliber", "playoff-level", "playoff-like", "playoff-style", "playoff implications", "feels like a playoff game", or any similar hedge. Say "the playoffs", "a playoff game", "playoff [round name]", or name the specific stakes directly. Hedging on a real playoff game is the worst possible mistake — readers will know and lose trust.`
+    : '';
+
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 1500,
@@ -174,7 +179,7 @@ Game Details:
 - ${context.homeTeam} record: ${context.homeRecord ?? 'unknown'}${context.homeStreak && !context.isPlayoffs ? ` (${context.homeStreak})` : ''}
 - ${context.awayTeam} record: ${context.awayRecord ?? 'unknown'}
 ${context.isPlayoffs ? '- NOTE: Streak data reflects end of regular season — do NOT mention win/loss streaks for playoff games.' : ''}
-${bigGameSection}
+${bigGameSection}${playoffLanguageRule}
 
 Promotions:
 ${promoText}
