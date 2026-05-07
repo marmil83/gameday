@@ -500,8 +500,8 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
       {/* Verdict */}
       {insights?.verdict && (
         <div className="px-6 pb-3">
-          <p className="text-sm font-semibold leading-snug" style={{ color: '#1d1d1f', fontStyle: 'italic' }}>
-            &ldquo;{insights.verdict}&rdquo;
+          <p className="text-sm font-semibold leading-snug" style={{ color: '#1d1d1f' }}>
+            {insights.verdict}
           </p>
         </div>
       )}
