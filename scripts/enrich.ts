@@ -36,7 +36,16 @@ function getPriceBaseline(league: string, playoffRound?: string | null): number 
   return LEAGUE_AVG_PRICES[league] ?? 40;
 }
 
+// IMPORTANT: keep these in sync with src/lib/constants.ts.
+// Standalone scripts can't reliably share the @/lib path alias, so we mirror values here.
+// If you change weights or experience baselines, update BOTH locations.
 const DEAL_SCORE_WEIGHTS = { price: 0.4, experience: 0.2, game_quality: 0.2, timing: 0.1, context: 0.1 };
+const PLAYOFF_DEAL_SCORE_WEIGHTS = { price: 0.25, experience: 0.25, game_quality: 0.25, timing: 0.10, context: 0.15 };
+const PLAYOFF_EXPERIENCE_BASELINE = 4.0;
+const ELIMINATION_EXPERIENCE_BASELINE = 5.5;
+function getDealScoreWeights(isPlayoffs?: boolean) {
+  return isPlayoffs ? PLAYOFF_DEAL_SCORE_WEIGHTS : DEAL_SCORE_WEIGHTS;
+}
 
 function clamp(v: number, min: number, max: number) { return Math.min(max, Math.max(min, v)); }
 function round(v: number, d = 2) { return Math.round(v * 10 ** d) / 10 ** d; }
@@ -78,9 +87,8 @@ function calcTimingScore(startTime: string, timezone?: string, isPlayoffs?: bool
 }
 
 function calcExperienceScore(promos: any[], isPlayoffs?: boolean, isElimination?: boolean) {
-  // Playoff baseline: virtually all home playoff games have rally towels, shirts, or elevated atmosphere.
-  // Apply even if no promos were scraped — they're just not listed on the regular promo page.
-  const playoffBaseline = isElimination ? 4.0 : isPlayoffs ? 3.0 : 0;
+  // Playoff baseline — sourced from constants block above; mirrors src/lib/constants.ts
+  const playoffBaseline = isElimination ? ELIMINATION_EXPERIENCE_BASELINE : isPlayoffs ? PLAYOFF_EXPERIENCE_BASELINE : 0;
 
   if (!promos || promos.length === 0) {
     const reasoning = isElimination
@@ -364,12 +372,15 @@ IMPORTANT: Team records and streaks are provided above — use ONLY those values
   const contextScore = clamp(baseContextScore + bigGame.contextBoost, 0, 10);
   const context = { score: contextScore };
 
+  // Pick weight profile — playoffs de-emphasize price, boost experience/quality/context
+  const weights = getDealScoreWeights(isPlayoffsByAnySource);
+
   const dealScore = round(
-    price.score * DEAL_SCORE_WEIGHTS.price +
-    experience.score * DEAL_SCORE_WEIGHTS.experience +
-    gameQuality.score * DEAL_SCORE_WEIGHTS.game_quality +
-    timing.score * DEAL_SCORE_WEIGHTS.timing +
-    context.score * DEAL_SCORE_WEIGHTS.context
+    price.score * weights.price +
+    experience.score * weights.experience +
+    gameQuality.score * weights.game_quality +
+    timing.score * weights.timing +
+    context.score * weights.context
   );
 
   // Merge big game flags into AI-generated context_flags

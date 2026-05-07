@@ -3,11 +3,14 @@
 
 import { createServiceClient } from '../supabase/server';
 import { getWeatherForGame } from './weather';
-import { getPriceBaseline } from '@/lib/constants';
+import {
+  getPriceBaseline,
+  getDealScoreWeights,
+  PLAYOFF_EXPERIENCE_BASELINE,
+  ELIMINATION_EXPERIENCE_BASELINE,
+} from '@/lib/constants';
 
 const KNOWN_PLAYOFF_ROUNDS = ['first-round', 'conference-semis', 'conference-finals', 'finals'] as const;
-
-const DEAL_SCORE_WEIGHTS = { price: 0.4, experience: 0.2, game_quality: 0.2, timing: 0.1, context: 0.1 };
 
 function clamp(v: number, min: number, max: number) { return Math.min(max, Math.max(min, v)); }
 function round(v: number, d = 2) { return Math.round(v * 10 ** d) / 10 ** d; }
@@ -59,8 +62,8 @@ function calcExperienceScore(
   isPlayoffs?: boolean,
   isElimination?: boolean,
 ) {
-  // Playoff baseline: virtually all home playoff games have rally towels, shirts, or elevated atmosphere.
-  const playoffBaseline = isElimination ? 4.0 : isPlayoffs ? 3.0 : 0;
+  // Playoff baseline — sourced from constants so every scoring path stays in sync
+  const playoffBaseline = isElimination ? ELIMINATION_EXPERIENCE_BASELINE : isPlayoffs ? PLAYOFF_EXPERIENCE_BASELINE : 0;
 
   if (!promos || promos.length === 0) {
     const reasoning = isElimination
@@ -218,12 +221,15 @@ async function rescoreGame(supabase: ReturnType<typeof createServiceClient>, gam
     reasoning: contextReasons.join(', ') || 'Standard conditions',
   };
 
+  // Pick weight profile — playoffs de-emphasize price, boost experience/quality/context
+  const weights = getDealScoreWeights(isPlayoffs);
+
   const dealScore = round(
-    price.score * DEAL_SCORE_WEIGHTS.price +
-    experience.score * DEAL_SCORE_WEIGHTS.experience +
-    gameQuality.score * DEAL_SCORE_WEIGHTS.game_quality +
-    timing.score * DEAL_SCORE_WEIGHTS.timing +
-    context.score * DEAL_SCORE_WEIGHTS.context
+    price.score * weights.price +
+    experience.score * weights.experience +
+    gameQuality.score * weights.game_quality +
+    timing.score * weights.timing +
+    context.score * weights.context
   );
 
   await supabase.from('scores').upsert({

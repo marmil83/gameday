@@ -29,7 +29,7 @@ export const PROMO_TYPES = [
 
 export const EFFORT_LEVELS = ['easy', 'moderate', 'high_effort'] as const;
 
-// Deal Score weights
+// Deal Score weights — regular season default
 export const DEAL_SCORE_WEIGHTS = {
   price: 0.4,
   experience: 0.2,
@@ -37,6 +37,29 @@ export const DEAL_SCORE_WEIGHTS = {
   timing: 0.1,
   context: 0.1,
 } as const;
+
+// Playoff weights — price matters less when stakes are huge.
+// Atmosphere, quality, and context (round, weather) matter more.
+// Used by every scoring path (deal-score.ts, rescore.ts, scripts/*) so playoff
+// games never get judged by regular-season weights.
+export const PLAYOFF_DEAL_SCORE_WEIGHTS = {
+  price: 0.25,
+  experience: 0.25,
+  game_quality: 0.25,
+  timing: 0.10,
+  context: 0.15,
+} as const;
+
+// Pick the right weight set based on context flags
+export function getDealScoreWeights(isPlayoffs?: boolean) {
+  return isPlayoffs ? PLAYOFF_DEAL_SCORE_WEIGHTS : DEAL_SCORE_WEIGHTS;
+}
+
+// Experience baseline boosts — playoff atmosphere alone outranks most regular-season promos.
+// Bumped from 3.0/4.0 → 4.0/5.5 so a no-promo playoff game scores 7.0 (was 6.0)
+// and a no-promo elimination game scores 8.5 (was 7.0).
+export const PLAYOFF_EXPERIENCE_BASELINE = 4.0;
+export const ELIMINATION_EXPERIENCE_BASELINE = 5.5;
 
 // How many games to show per city per day
 export const GAMES_PER_CITY = 5;

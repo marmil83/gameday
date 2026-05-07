@@ -2,7 +2,13 @@
 // Rules-based, deterministic scoring engine
 // AI classifies inputs; this module computes the score
 
-import { DEAL_SCORE_WEIGHTS, LEAGUE_AVG_PRICES, getPriceBaseline } from '../constants';
+import {
+  LEAGUE_AVG_PRICES,
+  getPriceBaseline,
+  getDealScoreWeights,
+  PLAYOFF_EXPERIENCE_BASELINE,
+  ELIMINATION_EXPERIENCE_BASELINE,
+} from '../constants';
 import type { Game, PricingSnapshot, Promotion, GameInsight } from '@/types/database';
 
 interface ScoreInputs {
@@ -92,9 +98,10 @@ function calculateExperienceScore(
   isPlayoffs?: boolean,
   isElimination?: boolean,
 ): { score: number; reasoning: string } {
-  // Playoff baseline: even without confirmed promos, atmosphere is genuinely different.
-  // Rally towels, shirts, and deafening crowds are virtually guaranteed at home playoff games.
-  const playoffBaseline = isElimination ? 4.0 : isPlayoffs ? 3.0 : 0;
+  // Playoff baseline: atmosphere alone is genuinely different — rally towels,
+  // shirts, and deafening crowds are virtually guaranteed at home playoff games.
+  // Sourced from constants so every scoring path stays in sync.
+  const playoffBaseline = isElimination ? ELIMINATION_EXPERIENCE_BASELINE : isPlayoffs ? PLAYOFF_EXPERIENCE_BASELINE : 0;
 
   if (promotions.length === 0) {
     const baseScore = 3 + playoffBaseline;
@@ -290,12 +297,15 @@ export function calculateDealScore(inputs: ScoreInputs): ScoreResult {
   const timing = calculateTimingScore(inputs.game, inputs.timezone, inputs.isPlayoffs);
   const context = calculateContextScore(inputs);
 
+  // Pick weight profile — playoffs de-emphasize price, boost experience/quality/context
+  const weights = getDealScoreWeights(inputs.isPlayoffs);
+
   const deal_score = round(
-    price.score * DEAL_SCORE_WEIGHTS.price +
-    experience.score * DEAL_SCORE_WEIGHTS.experience +
-    gameQuality.score * DEAL_SCORE_WEIGHTS.game_quality +
-    timing.score * DEAL_SCORE_WEIGHTS.timing +
-    context.score * DEAL_SCORE_WEIGHTS.context
+    price.score * weights.price +
+    experience.score * weights.experience +
+    gameQuality.score * weights.game_quality +
+    timing.score * weights.timing +
+    context.score * weights.context
   );
 
   // Build reasoning summary
@@ -319,11 +329,11 @@ export function calculateDealScore(inputs: ScoreInputs): ScoreResult {
     deal_score: clamp(deal_score, 0, 10),
     reasoning_summary,
     score_breakdown: {
-      price: { score: price.score, weight: DEAL_SCORE_WEIGHTS.price, reasoning: price.reasoning },
-      experience: { score: experience.score, weight: DEAL_SCORE_WEIGHTS.experience, reasoning: experience.reasoning },
-      game_quality: { score: gameQuality.score, weight: DEAL_SCORE_WEIGHTS.game_quality, reasoning: gameQuality.reasoning },
-      timing: { score: timing.score, weight: DEAL_SCORE_WEIGHTS.timing, reasoning: timing.reasoning },
-      context: { score: context.score, weight: DEAL_SCORE_WEIGHTS.context, reasoning: context.reasoning },
+      price: { score: price.score, weight: weights.price, reasoning: price.reasoning },
+      experience: { score: experience.score, weight: weights.experience, reasoning: experience.reasoning },
+      game_quality: { score: gameQuality.score, weight: weights.game_quality, reasoning: gameQuality.reasoning },
+      timing: { score: timing.score, weight: weights.timing, reasoning: timing.reasoning },
+      context: { score: context.score, weight: weights.context, reasoning: context.reasoning },
     },
   };
 }
