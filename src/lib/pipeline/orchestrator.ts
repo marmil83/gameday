@@ -7,6 +7,7 @@ import { ingestEventsForCity } from './events';
 import { scrapePromotionsForCity } from './promotions';
 import { enrichGamesForCity } from './enrich';
 import { updateStandings } from './standings';
+import { rescoreAllGames } from './rescore';
 
 interface PipelineResult {
   run_id: string;
@@ -94,6 +95,12 @@ export async function runPipelineForCity(cityId: string): Promise<PipelineResult
   console.log(`[Pipeline] Step 3: Enriching games for city ${cityId}`);
   const enrichResult = await enrichGamesForCity(cityId);
   allErrors.push(...enrichResult.errors);
+
+  // Step 4: Rescore all games with latest pricing, standings, and enrichment flags
+  // Runs after enrichment so playoff context_flags are immediately reflected in scores
+  console.log(`[Pipeline] Step 4: Rescoring all games`);
+  const rescoreResult = await rescoreAllGames();
+  allErrors.push(...rescoreResult.errors);
 
   const duration = Date.now() - startTime;
   const status = allErrors.length === 0 ? 'completed'
