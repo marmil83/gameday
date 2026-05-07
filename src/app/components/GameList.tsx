@@ -48,7 +48,7 @@ export default function GameList() {
     <div className="min-h-screen" style={{ background: '#F2F2F7' }}>
       {/* Header */}
       <header className="bg-white/80 backdrop-blur-md border-b border-black/5 sticky top-0 z-10">
-        <div className="max-w-lg mx-auto px-5 py-4">
+        <div className="max-w-5xl mx-auto px-5 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-lg font-semibold tracking-tight" style={{ color: '#1d1d1f' }}>GameDay</h1>
@@ -60,8 +60,8 @@ export default function GameList() {
       </header>
 
       {/* Headline + date nav */}
-      <div className="max-w-lg mx-auto px-5 pt-8 pb-3">
-        <h2 className="text-3xl font-bold tracking-tight" style={{ color: '#1d1d1f' }}>
+      <div className="max-w-5xl mx-auto px-5 lg:px-8 pt-8 pb-3">
+        <h2 className="text-3xl lg:text-4xl font-bold tracking-tight" style={{ color: '#1d1d1f' }}>
           {isToday
             ? 'Today\'s Games'
             : new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
@@ -98,17 +98,37 @@ export default function GameList() {
       </div>
 
       {/* Game Cards */}
-      <main className="max-w-lg mx-auto px-5 py-4 space-y-4">
+      <main className="max-w-5xl mx-auto px-5 lg:px-8 py-4">
         {loading ? (
-          <div className="space-y-4">
-            {[1, 2, 3].map(i => (
+          <div className="space-y-4 lg:grid lg:grid-cols-2 lg:gap-5 lg:space-y-0">
+            {[1, 2, 3, 4].map(i => (
               <div key={i} className="bg-white rounded-3xl h-72 animate-pulse" style={{ opacity: 0.6 }} />
             ))}
           </div>
         ) : games.length > 0 ? (
-          games.map((gameData) => (
-            <GameCard key={gameData.game.id} data={gameData} timezone={cityInfo.timezone} />
-          ))
+          <>
+            {/* Hero — top-ranked game; capped width for comfortable reading */}
+            <div className="mb-8 lg:max-w-2xl lg:mx-auto">
+              <p className="text-[10px] font-bold uppercase tracking-[0.15em] mb-2 ml-1" style={{ color: '#86868b' }}>
+                Today's pick
+              </p>
+              <GameCard key={games[0].game.id} data={games[0]} timezone={cityInfo.timezone} />
+            </div>
+
+            {/* Rest — 2-col grid on lg+ */}
+            {games.length > 1 && (
+              <>
+                <p className="text-[10px] font-bold uppercase tracking-[0.15em] mb-2 ml-1" style={{ color: '#86868b' }}>
+                  Also on
+                </p>
+                <div className="space-y-4 lg:grid lg:grid-cols-2 lg:gap-5 lg:space-y-0">
+                  {games.slice(1).map((gameData) => (
+                    <GameCard key={gameData.game.id} data={gameData} timezone={cityInfo.timezone} />
+                  ))}
+                </div>
+              </>
+            )}
+          </>
         ) : (
           <div className="text-center py-20">
             <p className="text-lg font-medium" style={{ color: '#86868b' }}>No games today</p>
@@ -118,7 +138,7 @@ export default function GameList() {
       </main>
 
       {/* Footer */}
-      <footer className="max-w-lg mx-auto px-5 py-10 text-center">
+      <footer className="max-w-5xl mx-auto px-5 lg:px-8 py-10 text-center">
         <p className="text-xs" style={{ color: '#aeaeb2' }}>
           Prices may not include all fees. Always verify at checkout.
         </p>
