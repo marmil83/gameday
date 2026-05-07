@@ -2,11 +2,23 @@
   "crons": [
     {
       "path": "/api/pipeline/rescore",
-      "schedule": "17 8 * * *"
+      "schedule": "0 9 * * *"
     },
     {
       "path": "/api/pipeline/run",
-      "schedule": "43 8 * * *"
+      "schedule": "30 9 * * *"
+    },
+    {
+      "path": "/api/pipeline/rescore",
+      "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/pipeline/rescore",
+      "schedule": "0 21 * * *"
+    },
+    {
+      "path": "/api/pipeline/run",
+      "schedule": "30 21 * * *"
     }
   ]
 }

@@ -2,7 +2,7 @@
 // Rules-based, deterministic scoring engine
 // AI classifies inputs; this module computes the score
 
-import { DEAL_SCORE_WEIGHTS, LEAGUE_AVG_PRICES } from '../constants';
+import { DEAL_SCORE_WEIGHTS, LEAGUE_AVG_PRICES, getPriceBaseline } from '../constants';
 import type { Game, PricingSnapshot, Promotion, GameInsight } from '@/types/database';
 
 interface ScoreInputs {
@@ -15,7 +15,9 @@ interface ScoreInputs {
   teamQuality?: number;       // 0-10, based on standings
   standingsRelevance?: number; // 0-10
   isPlayoffs?: boolean;
+  isElimination?: boolean;    // elimination or finals game
   isOpeningDay?: boolean;
+  playoffRound?: string | null; // e.g. 'first-round', 'conference-semis', 'conference-finals', 'finals'
   weatherScore?: number;       // 0-10, 10 = perfect weather
   isOutdoor?: boolean;
   timezone?: string;           // IANA timezone for local time calculations
@@ -43,13 +45,20 @@ function round(value: number, decimals = 2): number {
 /**
  * Price Score (0-10)
  * How good is the ticket price relative to what you'd typically pay?
+ * For playoff games, compares against the playoff market baseline (not regular season avg).
  */
-function calculatePriceScore(game: Game, pricing: PricingSnapshot | null): { score: number; reasoning: string } {
+function calculatePriceScore(
+  game: Game,
+  pricing: PricingSnapshot | null,
+  playoffRound?: string | null,
+): { score: number; reasoning: string } {
   if (!pricing || !pricing.lowest_price) {
     return { score: 5, reasoning: 'No pricing data available' };
   }
 
-  const avgPrice = LEAGUE_AVG_PRICES[game.league] || 40;
+  // Use playoff-aware baseline — $59 vs $200 (Conference Semis avg) is a great deal,
+  // but $59 vs $55 (regular season avg) is just average. Context matters.
+  const avgPrice = getPriceBaseline(game.league, playoffRound);
   const price = pricing.displayed_price || pricing.lowest_price;
 
   // Score based on how far below average the price is
@@ -64,11 +73,12 @@ function calculatePriceScore(game: Game, pricing: PricingSnapshot | null): { sco
   else if (ratio <= 2.0) score = 1 + (2.0 - ratio) * 4;
   else score = 1;
 
+  const marketLabel = playoffRound ? `playoff avg` : `typical`;
   const reasoning = ratio < 0.7
-    ? `Great value at $${price} (typical: $${avgPrice})`
+    ? `Great value at $${price} (${marketLabel}: $${avgPrice})`
     : ratio < 1.1
-      ? `Fair price at $${price} (typical: $${avgPrice})`
-      : `Above average at $${price} (typical: $${avgPrice})`;
+      ? `Fair price at $${price} (${marketLabel}: $${avgPrice})`
+      : `Above average at $${price} (${marketLabel}: $${avgPrice})`;
 
   return { score: clamp(round(score), 0, 10), reasoning };
 }
@@ -77,12 +87,26 @@ function calculatePriceScore(game: Game, pricing: PricingSnapshot | null): { sco
  * Experience Score (0-10)
  * Promotions, giveaways, theme nights, special events
  */
-function calculateExperienceScore(promotions: Promotion[]): { score: number; reasoning: string } {
+function calculateExperienceScore(
+  promotions: Promotion[],
+  isPlayoffs?: boolean,
+  isElimination?: boolean,
+): { score: number; reasoning: string } {
+  // Playoff baseline: even without confirmed promos, atmosphere is genuinely different.
+  // Rally towels, shirts, and deafening crowds are virtually guaranteed at home playoff games.
+  const playoffBaseline = isElimination ? 4.0 : isPlayoffs ? 3.0 : 0;
+
   if (promotions.length === 0) {
-    return { score: 3, reasoning: 'No promotions detected' };
+    const baseScore = 3 + playoffBaseline;
+    const reasoning = isElimination
+      ? 'Playoff atmosphere — expect giveaways and electric crowd'
+      : isPlayoffs
+        ? 'Playoff atmosphere — elevated energy and likely giveaways'
+        : 'No promotions detected';
+    return { score: clamp(baseScore, 0, 10), reasoning };
   }
 
-  let score = 3; // baseline
+  let score = 3 + playoffBaseline; // baseline
   const highlights: string[] = [];
 
   for (const promo of promotions) {
@@ -158,7 +182,7 @@ function calculateGameQualityScore(inputs: ScoreInputs): { score: number; reason
  * Timing Score (0-10)
  * Day of week, time of day, ease of attending
  */
-function calculateTimingScore(game: Game, timezone?: string): { score: number; reasoning: string } {
+function calculateTimingScore(game: Game, timezone?: string, isPlayoffs?: boolean): { score: number; reasoning: string } {
   const startTime = new Date(game.start_time);
 
   // Use timezone-aware local time if available, otherwise fall back to UTC
@@ -210,6 +234,13 @@ function calculateTimingScore(game: Game, timezone?: string): { score: number; r
     factors.push('late start');
   }
 
+  // Playoff games: people rearrange their schedule regardless of day.
+  // Boost weeknight penalty relief (+1) and cap late-start penalty.
+  if (isPlayoffs && dayOfWeek >= 1 && dayOfWeek <= 4) {
+    score += 1;
+    factors.push('playoff weeknight');
+  }
+
   const reasoning = factors.length > 0
     ? factors.join(', ')
     : 'Weeknight game';
@@ -253,10 +284,10 @@ function calculateContextScore(inputs: ScoreInputs): { score: number; reasoning:
  * Calculate the composite Deal Score
  */
 export function calculateDealScore(inputs: ScoreInputs): ScoreResult {
-  const price = calculatePriceScore(inputs.game, inputs.pricing);
-  const experience = calculateExperienceScore(inputs.promotions);
+  const price = calculatePriceScore(inputs.game, inputs.pricing, inputs.playoffRound);
+  const experience = calculateExperienceScore(inputs.promotions, inputs.isPlayoffs, inputs.isElimination);
   const gameQuality = calculateGameQualityScore(inputs);
-  const timing = calculateTimingScore(inputs.game, inputs.timezone);
+  const timing = calculateTimingScore(inputs.game, inputs.timezone, inputs.isPlayoffs);
   const context = calculateContextScore(inputs);
 
   const deal_score = round(

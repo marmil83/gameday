@@ -2,9 +2,11 @@
 // Runs the full automated workflow: ingest -> scrape -> enrich -> rank
 
 import { createServiceClient } from '../supabase/server';
+import { ingestESPNEventsForCity, attachSeatGeekPricingForCity } from './espn-events';
 import { ingestEventsForCity } from './events';
 import { scrapePromotionsForCity } from './promotions';
 import { enrichGamesForCity } from './enrich';
+import { updateStandings } from './standings';
 
 interface PipelineResult {
   run_id: string;
@@ -38,15 +40,54 @@ export async function runPipelineForCity(cityId: string): Promise<PipelineResult
 
   const runId = run?.id || 'unknown';
 
-  // Step 1: Ingest events
-  console.log(`[Pipeline] Step 1: Ingesting events for city ${cityId}`);
-  const eventResult = await ingestEventsForCity(cityId);
-  allErrors.push(...eventResult.errors);
+  // Step 0a: Mark past scheduled games as completed (4-hour grace for in-progress games).
+  // Runs server-side on every pipeline invocation so the DB stays clean even if the
+  // local scheduled task didn't fire (Mac was off, etc.).
+  console.log(`[Pipeline] Step 0a: Marking past games completed`);
+  const cutoff = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
+  await supabase.from('games').update({ status: 'completed' }).eq('status', 'scheduled').lt('start_time', cutoff);
 
-  // Step 2: Scrape promotions
+  // Step 0b: Update team standings (wins/losses/streak) so scoring is accurate.
+  // Runs once per full pipeline invocation — all cities share the same teams table,
+  // so this is a global refresh regardless of which city triggered the run.
+  console.log(`[Pipeline] Step 0b: Updating team standings`);
+  const standingsResult = await updateStandings();
+  if (standingsResult.errors.length > 0) allErrors.push(...standingsResult.errors);
+
+  // Step 1a: Ingest major-league games from ESPN (source of truth for opponent/date/time)
+  console.log(`[Pipeline] Step 1a: Ingesting ESPN events for city ${cityId}`);
+  const espnResult = await ingestESPNEventsForCity(cityId, 14);
+  allErrors.push(...espnResult.errors);
+  console.log(`[Pipeline] ESPN: ${espnResult.found} found, ${espnResult.inserted} inserted, ${espnResult.migrated} migrated, ${espnResult.updated} updated`);
+
+  // Step 1b: Attach SeatGeek pricing to ESPN game rows (ticket links + prices)
+  console.log(`[Pipeline] Step 1b: Attaching SeatGeek pricing for city ${cityId}`);
+  await attachSeatGeekPricingForCity(cityId, 14);
+
+  // Step 1c: Ingest minor-league games from SeatGeek (not on ESPN)
+  console.log(`[Pipeline] Step 1c: Ingesting minor-league events for city ${cityId}`);
+  const minorResult = await ingestEventsForCity(cityId);
+  allErrors.push(...minorResult.errors);
+
+  const eventResult = {
+    found: espnResult.found + minorResult.found,
+    inserted: espnResult.inserted + minorResult.inserted,
+    errors: [...espnResult.errors, ...minorResult.errors],
+  };
+
+  // Step 2: Scrape promotions for the next 7 days so upcoming games are covered
   console.log(`[Pipeline] Step 2: Scraping promotions for city ${cityId}`);
-  const today = new Date().toISOString().split('T')[0];
-  const promoResult = await scrapePromotionsForCity(cityId, today);
+  let totalPromoExtracted = 0;
+  const promoErrors: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() + i);
+    const dateStr = d.toISOString().split('T')[0];
+    const result = await scrapePromotionsForCity(cityId, dateStr);
+    totalPromoExtracted += result.total_extracted;
+    promoErrors.push(...result.errors);
+  }
+  const promoResult = { total_extracted: totalPromoExtracted, errors: promoErrors };
   allErrors.push(...promoResult.errors);
 
   // Step 3: Enrich games (AI + scoring)

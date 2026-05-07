@@ -18,25 +18,44 @@ const LEAGUE_AVG_PRICES: Record<string, number> = {
   'MiLB-AAA': 15, 'MiLB-AA': 12, 'MiLB-A+': 10, AHL: 20, USL: 18, WHL: 15,
 };
 
+const PLAYOFF_AVG_PRICES: Record<string, Partial<Record<string, number>>> = {
+  NBA: { 'first-round': 150, 'conference-semis': 200, 'conference-finals': 350, 'finals': 650 },
+  NHL: { 'first-round': 120, 'conference-semis': 180, 'conference-finals': 300, 'finals': 550 },
+  MLB: { 'first-round': 100, 'conference-semis': 130, 'conference-finals': 220, 'finals': 550 },
+  NFL: { 'first-round': 300, 'conference-semis': 500, 'conference-finals': 750, 'finals': 1200 },
+  AHL: { 'first-round': 60, 'conference-semis': 80, 'conference-finals': 110, 'finals': 150 },
+};
+
+function getPriceBaseline(league: string, playoffRound?: string | null): number {
+  if (playoffRound) {
+    const roundAvg = PLAYOFF_AVG_PRICES[league]?.[playoffRound];
+    if (roundAvg) return roundAvg;
+  }
+  return LEAGUE_AVG_PRICES[league] ?? 40;
+}
+
+const KNOWN_PLAYOFF_ROUNDS = ['first-round', 'conference-semis', 'conference-finals', 'finals'] as const;
+
 const DEAL_SCORE_WEIGHTS = { price: 0.4, experience: 0.2, game_quality: 0.2, timing: 0.1, context: 0.1 };
 
 function clamp(v: number, min: number, max: number) { return Math.min(max, Math.max(min, v)); }
 function round(v: number, d = 2) { return Math.round(v * 10 ** d) / 10 ** d; }
 
-function calcPriceScore(league: string, lowestPrice: number | null) {
+function calcPriceScore(league: string, lowestPrice: number | null, playoffRound?: string | null) {
   if (!lowestPrice) return { score: 5, reasoning: 'No pricing data' };
-  const avg = LEAGUE_AVG_PRICES[league] || 40;
+  const avg = getPriceBaseline(league, playoffRound);
   const ratio = lowestPrice / avg;
   let score = ratio <= 0.25 ? 10 : ratio <= 0.5 ? 8 + (0.5 - ratio) * 8 : ratio <= 1 ? 5 + (1 - ratio) * 6 : ratio <= 1.5 ? 3 + (1.5 - ratio) * 4 : ratio <= 2 ? 1 + (2 - ratio) * 4 : 1;
+  const marketLabel = playoffRound ? 'playoff avg' : 'typical';
   const reasoning = ratio < 0.7
-    ? `Great value at $${lowestPrice} (typical: $${avg})`
+    ? `Great value at $${lowestPrice} (${marketLabel}: $${avg})`
     : ratio < 1.1
-      ? `Fair price at $${lowestPrice} (typical: $${avg})`
-      : `Above average at $${lowestPrice} (typical: $${avg})`;
+      ? `Fair price at $${lowestPrice} (${marketLabel}: $${avg})`
+      : `Above average at $${lowestPrice} (${marketLabel}: $${avg})`;
   return { score: clamp(round(score), 0, 10), reasoning };
 }
 
-function calcTimingScore(startTime: string, timezone?: string) {
+function calcTimingScore(startTime: string, timezone?: string, isPlayoffs?: boolean) {
   const d = new Date(startTime);
   let day: number;
   let hour: number;
@@ -59,12 +78,25 @@ function calcTimingScore(startTime: string, timezone?: string) {
   if (hour >= 17 && hour <= 19) { score += 1.5; factors.push('evening start'); }
   else if (hour >= 12 && hour <= 15) { score += 1; factors.push('daytime game'); }
   else if (hour >= 20) { score -= 0.5; factors.push('late start'); }
+  // Playoff weeknight boost — people rearrange their schedule for playoffs
+  if (isPlayoffs && day >= 1 && day <= 4) { score += 1; factors.push('playoff weeknight'); }
   return { score: clamp(round(score), 0, 10), reasoning: factors.join(', ') || 'Weeknight game' };
 }
 
-function calcExperienceScore(promos: any[]) {
-  if (!promos || promos.length === 0) return { score: 3, reasoning: 'No promotions detected' };
-  let score = 3;
+function calcExperienceScore(promos: any[], isPlayoffs?: boolean, isElimination?: boolean) {
+  // Playoff baseline: virtually all home playoff games have rally towels, shirts, or elevated atmosphere.
+  const playoffBaseline = isElimination ? 4.0 : isPlayoffs ? 3.0 : 0;
+
+  if (!promos || promos.length === 0) {
+    const reasoning = isElimination
+      ? 'Playoff atmosphere — expect giveaways and electric crowd'
+      : isPlayoffs
+        ? 'Playoff atmosphere — elevated energy and likely giveaways'
+        : 'No promotions detected';
+    return { score: clamp(3 + playoffBaseline, 0, 10), reasoning };
+  }
+
+  let score = 3 + playoffBaseline;
   const highlights: string[] = [];
   for (const p of promos) {
     switch (p.promo_type) {
@@ -79,7 +111,9 @@ function calcExperienceScore(promos: any[]) {
   }
   return {
     score: clamp(round(score), 0, 10),
-    reasoning: highlights.length > 0 ? `Includes: ${highlights.join(', ')}` : 'Standard game experience',
+    reasoning: highlights.length > 0
+      ? (isPlayoffs ? `Playoff + ${highlights.join(', ')}` : `Includes: ${highlights.join(', ')}`)
+      : 'Standard game experience',
   };
 }
 
@@ -139,17 +173,32 @@ async function rescoreGame(game: any) {
 
   const isOutdoor = team?.venue_type === 'outdoor';
 
-  // Get latest pricing
+  // Get best pricing: cheapest non-null price across all sources.
+  // A null SeatGeek snapshot (common when events are sold-out or started) must
+  // never shadow a real TickPick price captured earlier.
   const { data: pricing } = await supabase
     .from('pricing_snapshots')
     .select('lowest_price')
     .eq('game_id', game.id)
-    .order('captured_at', { ascending: false })
+    .not('lowest_price', 'is', null)
+    .order('lowest_price', { ascending: true })
     .limit(1)
     .single();
 
   // Get promotions
   const { data: promos } = await supabase.from('promotions').select('promo_type, promo_item').eq('game_id', game.id);
+
+  // Pull context flags from previous enrichment to preserve playoff detection
+  const { data: insights } = await supabase
+    .from('game_insights')
+    .select('context_flags')
+    .eq('game_id', game.id)
+    .single();
+  const contextFlags: string[] = (insights?.context_flags as string[]) || [];
+  const isPlayoffs = contextFlags.includes('playoff') || contextFlags.includes('elimination') || contextFlags.includes('finals');
+  const isElimination = contextFlags.includes('elimination') || contextFlags.includes('finals');
+  // Derive playoff round from context_flags — enrich.ts stores the slug directly (e.g. 'conference-semis')
+  const playoffRound = KNOWN_PLAYOFF_ROUNDS.find(r => contextFlags.includes(r)) ?? null;
 
   // Get away team standings
   const { data: awayTeamData } = await supabase
@@ -179,12 +228,19 @@ async function rescoreGame(game: any) {
   const homeTeamData = team ? { wins: team.wins, losses: team.losses, win_pct: team.win_pct, streak: team.streak } : null;
 
   // Calculate all sub-scores (pure math, no AI)
-  const price = calcPriceScore(game.league, lowestPrice);
-  const experience = calcExperienceScore(promos || []);
+  const price = calcPriceScore(game.league, lowestPrice, playoffRound);
+  const experience = calcExperienceScore(promos || [], isPlayoffs, isElimination);
   const gameQuality = calcGameQuality(homeTeamData, awayTeamData);
-  const timing = calcTimingScore(game.start_time, tz);
-  const contextScore = isOutdoor && weather ? weather.weather_score : 5;
-  const context = { score: contextScore, reasoning: isOutdoor && weather ? (contextScore >= 7 ? 'great weather' : contextScore <= 3 ? 'weather concern' : 'fair weather') : 'Standard conditions' };
+  const timing = calcTimingScore(game.start_time, tz, isPlayoffs);
+  // Context score: weather (outdoor) + playoff boost preserved from enrichment
+  const baseContextScore = isOutdoor && weather ? weather.weather_score : 5;
+  const playoffContextBoost = isElimination ? 5 : isPlayoffs ? 3 : 0;
+  const contextScore = clamp(baseContextScore + playoffContextBoost, 0, 10);
+  const contextReasons = [];
+  if (isElimination) contextReasons.push('elimination game');
+  else if (isPlayoffs) contextReasons.push('playoff game');
+  if (isOutdoor && weather) contextReasons.push(contextScore >= 7 ? 'great weather' : contextScore <= 3 ? 'weather concern' : 'fair weather');
+  const context = { score: contextScore, reasoning: contextReasons.join(', ') || 'Standard conditions' };
 
   const dealScore = round(
     price.score * DEAL_SCORE_WEIGHTS.price +
@@ -213,12 +269,15 @@ async function rescoreGame(game: any) {
 async function main() {
   console.log('Rescoring games (no AI tokens used)\n');
 
+  // Include games that started up to 4 hours ago (may still be live/scoreable)
+  const cutoff = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
+
   const { data: games, error } = await supabase
     .from('games')
     .select('*')
     .eq('status', 'scheduled')
     .eq('is_home_game', true)
-    .gte('start_time', new Date().toISOString())
+    .gte('start_time', cutoff)
     .order('start_time', { ascending: true })
     .limit(50);
 

@@ -188,7 +188,8 @@ export interface PipelineRun {
 
 export interface GameCard {
   game: Game;
-  pricing: PricingSnapshot | null;
+  pricing: PricingSnapshot | null;        // cheapest snapshot (headline price)
+  all_pricing: PricingSnapshot[];          // all snapshots, one per source
   promotions: Promotion[];
   score: Score | null;
   tags: Tag[];

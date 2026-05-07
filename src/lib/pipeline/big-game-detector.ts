@@ -23,6 +23,8 @@ export type PlayoffRound =
   | 'finals';
 
 export interface BigGameContext {
+  /** Actual opponent name resolved from ESPN (populated when DB has TBD) */
+  detectedOpponent: string | null;
   /** Is this a playoff game at all? */
   isPlayoffs: boolean;
   /** Which round of the playoffs */
@@ -138,6 +140,7 @@ interface ESPNSeriesInfo {
   seriesSummary: string | null;   // e.g. "Series tied 3-3"
   gameNumber: number | null;
   eventName: string | null;       // full event title from ESPN
+  opponent: string | null;        // actual opponent display name from ESPN
 }
 
 async function fetchESPNSeriesInfo(
@@ -154,15 +157,18 @@ async function fetchESPNSeriesInfo(
   let data: any;
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
-    if (!res.ok) return { isPlayoffs: false, roundName: null, seriesSummary: null, gameNumber: null, eventName: null };
+    if (!res.ok) return { isPlayoffs: false, roundName: null, seriesSummary: null, gameNumber: null, eventName: null, opponent: null };
     data = await res.json();
   } catch {
-    return { isPlayoffs: false, roundName: null, seriesSummary: null, gameNumber: null, eventName: null };
+    return { isPlayoffs: false, roundName: null, seriesSummary: null, gameNumber: null, eventName: null, opponent: null };
   }
 
   const events: any[] = data.events || [];
   const home = homeTeam.toLowerCase();
   const away = awayTeam.toLowerCase();
+  // When the opponent is TBD / unknown, only require the home team to match
+  const awayIsTbd = !away || away === 'tbd' || away.startsWith('nba ') ||
+    away.startsWith('nhl ') || away.startsWith('mlb ') || away.startsWith('nfl ');
 
   for (const event of events) {
     const comp = (event.competitions || [])[0];
@@ -176,31 +182,44 @@ async function fetchESPNSeriesInfo(
     const matchesHome = compTeams.some(t =>
       t.includes(lastWord(home)) || lastWord(home).includes(lastWord(t))
     );
-    const matchesAway = compTeams.some(t =>
+    // Skip away-team check when opponent is TBD — just trust the home team match
+    const matchesAway = awayIsTbd || compTeams.some(t =>
       t.includes(lastWord(away)) || lastWord(away).includes(lastWord(t))
     );
     if (!matchesHome || !matchesAway) continue;
 
+    // Resolve the actual opponent name (the competitor that is NOT the home team)
+    const opponentCompetitor = (comp.competitors || []).find((c: any) => {
+      const name = (c.team?.displayName || '').toLowerCase();
+      return !name.includes(lastWord(home));
+    });
+    const opponent: string | null = opponentCompetitor?.team?.displayName || null;
+
     // Found the game — extract series/playoff info
     const series = comp.series;
+    const noteHeadline = (comp.notes?.[0]?.headline || '').toLowerCase();
     const isPlayoff = series?.type === 'playoff' ||
       (comp.type?.text || '').toLowerCase().includes('playoff') ||
-      (comp.type?.abbreviation || '').toLowerCase().includes('post');
+      (comp.type?.abbreviation || '').toLowerCase().includes('post') ||
+      noteHeadline.includes('semifinal') || noteHeadline.includes('final') ||
+      noteHeadline.includes('round') || noteHeadline.includes('wild card') ||
+      !!series;
 
     const seriesSummary = series?.summary || null;
 
     // Game number: totalCompetitions tells us which game in the series we're on
     // (ESPN increments this each game — 1 for G1, 7 for G7)
+    // For new series ("Series starts X/X"), totalCompetitions may be 0 or absent —
+    // fall back to parsing "Game N" from notes/event name.
     let gameNumber: number | null = null;
-    if (series?.totalCompetitions) {
+    if (series?.totalCompetitions && series.totalCompetitions > 0) {
       gameNumber = series.totalCompetitions;
-    } else {
-      // Fall back to parsing event name or notes
-      const namesToCheck = [event.name || '', event.shortName || '', comp.notes?.[0]?.headline || ''];
-      for (const n of namesToCheck) {
-        const m = n.match(/game\s*(\d)/i);
-        if (m) { gameNumber = parseInt(m[1]); break; }
-      }
+    }
+    // Always try to parse from notes/name (catches "East Semifinals - Game 1" etc.)
+    const namesToCheck = [comp.notes?.[0]?.headline || '', event.name || '', event.shortName || ''];
+    for (const n of namesToCheck) {
+      const m = n.match(/game\s*(\d)/i);
+      if (m) { gameNumber = parseInt(m[1]); break; }
     }
 
     // Round name — prefer notes headline (e.g. "East 1st Round - Game 7"),
@@ -213,10 +232,11 @@ async function fetchESPNSeriesInfo(
       seriesSummary: isPlayoff ? seriesSummary : null,
       gameNumber: isPlayoff ? gameNumber : null,
       eventName: event.name || event.shortName || null,
+      opponent,
     };
   }
 
-  return { isPlayoffs: false, roundName: null, seriesSummary: null, gameNumber: null, eventName: null };
+  return { isPlayoffs: false, roundName: null, seriesSummary: null, gameNumber: null, eventName: null, opponent: null };
 }
 
 // ─────────────────────────────────────────────
@@ -226,25 +246,33 @@ async function fetchESPNSeriesInfo(
 function classifyRound(roundName: string | null): PlayoffRound | null {
   if (!roundName) return null;
   const r = roundName.toLowerCase();
+
+  // Check play-in first
   if (r.includes('play-in') || r.includes('play in')) return 'play-in';
-  // Finals: must NOT also say "conference" or "division"
-  if ((r.includes('nba final') || r.includes('stanley cup final') || r.includes('world series') ||
-       r.includes('super bowl') || r.includes('mls cup') || r.includes('championship game') ||
-       (r.includes('final') && !r.includes('conference') && !r.includes('division') && !r.includes('1st') && !r.includes('2nd') && !r.includes('3rd')))
-  ) return 'finals';
+
+  // Semis BEFORE finals — "semifinals" contains "final" so order matters
+  if (/\bsemifinals?\b/.test(r) || r.includes('second round') || r.includes('2nd round') ||
+      r.includes('conference semi') || r.includes('division series') ||
+      r.includes('alds') || r.includes('nlds') || r.includes('rd32')) return 'conference-semis';
+
+  // Conference finals (e.g. "Conference Finals", "East Finals", "ECF")
   if (r.includes('conference final') || r.includes('eastern final') || r.includes('western final') ||
+      r.includes('east final') || r.includes('west final') ||
       r.includes('conference championship') || r.includes('alcs') || r.includes('nlcs') ||
-      r.includes('ecf') || r.includes('wcf')) return 'conference-finals';
-  if (r.includes('second round') || r.includes('2nd round') || r.includes('semifinal') ||
-      r.includes('division series') || r.includes('alds') || r.includes('nlds') ||
-      r.includes('conference semi') || r.includes('rd32')) return 'conference-semis';
+      r.includes('ecf') || r.includes('wcf') || r === 'rd4') return 'conference-finals';
+
+  // Championship / the actual finals
+  if (r.includes('nba final') || r.includes('stanley cup final') || r.includes('world series') ||
+      r.includes('super bowl') || r.includes('mls cup') ||
+      (r.includes('final') && !r.includes('semi') && !r.includes('conference') &&
+       !r.includes('division') && !r.includes('1st') && !r.includes('2nd') && !r.includes('3rd')) ||
+      r === 'rd2' || r === 'champ') return 'finals';
+
+  // First round
   if (r.includes('first round') || r.includes('1st round') || r.includes('wild card') ||
-      r.includes('opening round') || r.includes('qualifying') || r.includes('rd16')) return 'first-round';
-  // ESPN type abbreviations
-  if (r === 'rd16') return 'first-round';
-  if (r === 'rd8') return 'conference-semis';
-  if (r === 'rd4') return 'conference-finals';
-  if (r === 'rd2' || r === 'champ') return 'finals';
+      r.includes('opening round') || r.includes('qualifying') ||
+      r === 'rd16') return 'first-round';
+
   return null;
 }
 
@@ -295,21 +323,21 @@ function computeBoosts(ctx: {
   let ctx2 = 0;
 
   if (ctx.isPlayoffs) {
-    // Base playoff boost
-    gq += 0.5;
-    ctx2 += 1.5;
+    // Base playoff boost — any playoff game is better than regular season
+    gq += 1.5;
+    ctx2 += 2.0;
 
     switch (ctx.playoffRound) {
       case 'finals':
-        gq += 2.5; ctx2 += 3.5; break;
+        gq += 3.0; ctx2 += 3.5; break;
       case 'conference-finals':
-        gq += 2.0; ctx2 += 2.5; break;
+        gq += 2.5; ctx2 += 3.0; break;
       case 'conference-semis':
-        gq += 1.5; ctx2 += 1.5; break;
+        gq += 2.0; ctx2 += 2.0; break;
       case 'first-round':
-        gq += 0.5; ctx2 += 0.5; break;
-      case 'play-in':
         gq += 1.0; ctx2 += 1.0; break;
+      case 'play-in':
+        gq += 1.5; ctx2 += 1.5; break;
     }
 
     // Game number within series
@@ -323,10 +351,10 @@ function computeBoosts(ctx: {
 
   if (ctx.isRivalry) { gq += 1.5; }
 
-  // Cap boosts at reasonable max
+  // Cap boosts — game quality max 6, context max 6 (scores clamped to 10 downstream)
   return {
-    gameQualityBoost: Math.min(gq, 5),
-    contextBoost: Math.min(ctx2, 5),
+    gameQualityBoost: Math.min(gq, 6),
+    contextBoost: Math.min(ctx2, 6),
   };
 }
 
@@ -410,7 +438,7 @@ export async function detectBigGame(
   // 3. ESPN series lookup (async, best-effort)
   const espnRoute = LEAGUE_TO_ESPN[league];
   let espnInfo: ESPNSeriesInfo = {
-    isPlayoffs: false, roundName: null, seriesSummary: null, gameNumber: null, eventName: null,
+    isPlayoffs: false, roundName: null, seriesSummary: null, gameNumber: null, eventName: null, opponent: null,
   };
   if (espnRoute) {
     espnInfo = await fetchESPNSeriesInfo(
@@ -449,6 +477,7 @@ export async function detectBigGame(
   });
 
   return {
+    detectedOpponent: espnInfo.opponent,
     isPlayoffs: espnInfo.isPlayoffs,
     playoffRound,
     seriesGameNumber: espnInfo.gameNumber,

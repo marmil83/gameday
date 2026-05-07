@@ -16,55 +16,104 @@ interface PriceResult {
   tickpickUrl: string;
 }
 
+// Map league → TickPick league slug
+const TICKPICK_LEAGUE_SLUGS: Record<string, string> = {
+  NBA: 'nba', NHL: 'nhl', MLB: 'mlb', NFL: 'nfl',
+  MLS: 'mls', NWSL: 'nwsl', WNBA: 'wnba',
+  AHL: 'ahl', 'MiLB-AAA': 'milb', 'MiLB-AA': 'milb', 'MiLB-A+': 'milb',
+};
+
 /**
- * Search TickPick for a team and extract prices + URLs from search results
+ * Convert team name to TickPick team page slug.
+ * "Detroit Pistons" → "detroit-pistons"
+ * "LA Clippers" → "la-clippers"
  */
-async function scrapeTeamPrices(teamName: string): Promise<PriceResult[]> {
+function toTickPickSlug(teamName: string): string {
+  return teamName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+/**
+ * Build the TickPick team page URL.
+ * Primary: /nba/detroit-pistons-tickets/
+ * Falls back to search if league not mapped.
+ */
+function buildTickPickUrl(teamName: string, league: string): string {
+  const leagueSlug = TICKPICK_LEAGUE_SLUGS[league];
+  if (leagueSlug) {
+    return `https://www.tickpick.com/${leagueSlug}/${toTickPickSlug(teamName)}-tickets/`;
+  }
+  return `https://www.tickpick.com/search?q=${encodeURIComponent(teamName)}`;
+}
+
+/**
+ * Extract priced event links from a TickPick page (team page or search).
+ * Handles both text formats:
+ *   Search:    "MAY 03 SUN Detroit Pistons vs. Magic ... From $184+"
+ *   Team page: "MAY 03 SUN Rnd 1: Pistons vs. Magic - Game 7 3:30pm ... From $184+ Hot Event"
+ */
+function parseEventLinks(links: { href: string; text: string }[]): PriceResult[] {
+  const months: Record<string, string> = {
+    JAN: '01', FEB: '02', MAR: '03', APR: '04', MAY: '05', JUN: '06',
+    JUL: '07', AUG: '08', SEP: '09', OCT: '10', NOV: '11', DEC: '12',
+  };
+  const results: PriceResult[] = [];
+  for (const link of links) {
+    const dateMatch = link.text.match(/^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+(\d{1,2})\s/);
+    const priceMatch = link.text.match(/From \$(\d+)\+?/);
+    if (dateMatch && priceMatch) {
+      const month = months[dateMatch[1]];
+      const day = dateMatch[2].padStart(2, '0');
+      results.push({
+        lowestPrice: parseInt(priceMatch[1]),
+        eventDate: `2026-${month}-${day}`,
+        tickpickUrl: link.href,
+      });
+    }
+  }
+  return results;
+}
+
+/**
+ * Scrape TickPick for a team. Tries the team page first (catches same-day and
+ * future games), then falls back to the search page if the team page 404s or
+ * returns no results.
+ */
+async function scrapeTeamPrices(teamName: string, league: string): Promise<PriceResult[]> {
   let browser;
   try {
     browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
-    const searchUrl = `https://www.tickpick.com/search?q=${encodeURIComponent(teamName)}`;
-    await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
-    await new Promise(r => setTimeout(r, 2000));
-
-    // Try scrolling to load more results
-    for (let i = 0; i < 5; i++) {
-      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-      await new Promise(r => setTimeout(r, 1000));
-    }
-
-    // Extract event links with their text (contains date + price)
-    const eventLinks = await page.evaluate(() => {
-      const links = Array.from(document.querySelectorAll('a[href*="/buy-"]'));
-      return links.map(a => ({
-        href: (a as HTMLAnchorElement).href,
-        text: (a as HTMLElement).innerText.replace(/\s+/g, ' ').trim(),
-      }));
-    });
-
-    const results: PriceResult[] = [];
-    const months: Record<string, string> = {
-      JAN: '01', FEB: '02', MAR: '03', APR: '04', MAY: '05', JUN: '06',
-      JUL: '07', AUG: '08', SEP: '09', OCT: '10', NOV: '11', DEC: '12',
+    const extractLinks = async (): Promise<{ href: string; text: string }[]> => {
+      // Scroll to lazy-load more events
+      for (let i = 0; i < 3; i++) {
+        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+        await new Promise(r => setTimeout(r, 800));
+      }
+      return page.evaluate(() =>
+        Array.from(document.querySelectorAll('a[href*="/buy-"]')).map(a => ({
+          href: (a as HTMLAnchorElement).href,
+          text: (a as HTMLElement).innerText.replace(/\s+/g, ' ').trim(),
+        }))
+      );
     };
 
-    for (const link of eventLinks) {
-      // Parse: "APR 14 TUE Detroit Tigers vs. Kansas City Royals Comerica Park - Detroit, MI From $10+"
-      const dateMatch = link.text.match(/^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+(\d{1,2})\s/);
-      const priceMatch = link.text.match(/From \$(\d+)\+?/);
+    // 1. Try team page first — shows same-day games that search omits
+    const teamPageUrl = buildTickPickUrl(teamName, league);
+    await page.goto(teamPageUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+    await new Promise(r => setTimeout(r, 1500));
 
-      if (dateMatch && priceMatch) {
-        const month = months[dateMatch[1]];
-        const day = dateMatch[2].padStart(2, '0');
-        results.push({
-          lowestPrice: parseInt(priceMatch[1]),
-          eventDate: `2026-${month}-${day}`,
-          tickpickUrl: link.href,
-        });
-      }
+    let links = await extractLinks();
+    let results = parseEventLinks(links);
+
+    // 2. Fall back to search if team page gave nothing
+    if (results.length === 0) {
+      const searchUrl = `https://www.tickpick.com/search?q=${encodeURIComponent(teamName)}`;
+      await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+      await new Promise(r => setTimeout(r, 1500));
+      links = await extractLinks();
+      results = parseEventLinks(links);
     }
 
     return results;
@@ -141,7 +190,7 @@ async function main() {
     || (process.argv.includes('--city') ? process.argv[process.argv.indexOf('--city') + 1] : null);
 
   // Get teams
-  let query = supabase.from('teams').select('id, name, short_name, city_id');
+  let query = supabase.from('teams').select('id, name, short_name, city_id, league');
 
   if (cityArg) {
     const { data: city } = await supabase
@@ -167,7 +216,7 @@ async function main() {
   for (const team of teams) {
     console.log(`[${team.short_name}] ${team.name}`);
 
-    const prices = await scrapeTeamPrices(team.name);
+    const prices = await scrapeTeamPrices(team.name, team.league);
     console.log(`  Found ${prices.length} events with pricing`);
 
     if (prices.length > 0) {

@@ -5,22 +5,41 @@ import { createServiceClient } from '../supabase/server';
 import { enrichGame } from '../ai/claude';
 import { calculateDealScore } from '../scoring/deal-score';
 import { getWeatherForGame } from './weather';
-import { LEAGUE_AVG_PRICES, GAMES_PER_CITY } from '../constants';
+import { detectBigGame } from './big-game-detector';
+import { LEAGUE_AVG_PRICES, GAMES_PER_CITY, getPriceBaseline } from '../constants';
 import type { Game, PricingSnapshot, Promotion } from '@/types/database';
 
 /**
- * Get the latest pricing snapshot for a game
+ * Get the best pricing snapshot for a game.
+ * Prefers the cheapest non-null price across all sources — never lets a null
+ * SeatGeek snapshot (common when games are sold-out or already started) shadow
+ * a real price from TickPick or another source.
  */
 async function getLatestPricing(gameId: string): Promise<PricingSnapshot | null> {
   const supabase = createServiceClient();
-  const { data } = await supabase
+
+  // First: cheapest snapshot with an actual price
+  const { data: priced } = await supabase
+    .from('pricing_snapshots')
+    .select('*')
+    .eq('game_id', gameId)
+    .not('lowest_price', 'is', null)
+    .order('lowest_price', { ascending: true })
+    .limit(1)
+    .single();
+
+  if (priced) return priced as PricingSnapshot;
+
+  // Fallback: most recent snapshot (may have null price — scoring handles that)
+  const { data: latest } = await supabase
     .from('pricing_snapshots')
     .select('*')
     .eq('game_id', gameId)
     .order('captured_at', { ascending: false })
     .limit(1)
     .single();
-  return data as PricingSnapshot | null;
+
+  return latest as PricingSnapshot | null;
 }
 
 /**
@@ -95,27 +114,50 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
     }
   }
 
-  // Compute game quality from standings
+  // Compute base game quality from standings
   const homePct = Number(homeTeam?.win_pct) || 0;
   const awayPct = awayTeam ? (Number(awayTeam.win_pct) || 0) : 0.5;
   const hasStandings = homeTeam?.wins != null && (homeTeam.wins > 0 || homeTeam.losses > 0);
   let teamQuality: number | undefined;
   if (hasStandings) {
     const avgPct = (homePct + awayPct) / 2;
-    // Convert avg win% to 0-10 scale: .500 = 5, .600 = 7, .400 = 3
     teamQuality = 5 + (avgPct - 0.5) * 20;
-    // Competitive matchup bonus
     const pctDiff = Math.abs(homePct - awayPct);
     if (pctDiff < 0.1) teamQuality += 1;
     else if (pctDiff > 0.25) teamQuality -= 0.5;
-    // Streak bonus
-    const streak = homeTeam.streak || '';
+    const streak = homeTeam?.streak || '';
     const streakNum = parseInt(streak.replace(/\D/g, '')) || 0;
     if (streak.startsWith('W') && streakNum >= 3) teamQuality += 1;
     teamQuality = Math.max(0, Math.min(10, teamQuality));
   }
 
-  // 1. AI Enrichment
+  // Big game detection — ESPN API + rivalry map
+  const bigGame = await detectBigGame(
+    game.home_team_name,
+    game.away_team_name,
+    game.league,
+    game.start_time,
+  );
+
+  // Apply big game boosts on top of standings-based team quality
+  const boostedTeamQuality = teamQuality !== undefined
+    ? Math.min(10, teamQuality + bigGame.gameQualityBoost)
+    : bigGame.gameQualityBoost > 0 ? Math.min(10, 5 + bigGame.gameQualityBoost) : undefined;
+
+  const boostedWeatherScore = weatherScore !== undefined
+    ? Math.min(10, weatherScore + bigGame.contextBoost)
+    : bigGame.contextBoost > 0 ? Math.min(10, 5 + bigGame.contextBoost) : undefined;
+
+  // Auto-resolve TBD opponent from ESPN — update DB so it shows correctly
+  if (game.away_team_name === 'TBD' && bigGame.detectedOpponent) {
+    await supabase
+      .from('games')
+      .update({ away_team_name: bigGame.detectedOpponent })
+      .eq('id', gameId);
+    game.away_team_name = bigGame.detectedOpponent;
+  }
+
+  // 1. AI Enrichment — pass big game context so copy leads with stakes
   const enrichment = await enrichGame({
     homeTeam: game.home_team_name,
     awayTeam: game.away_team_name,
@@ -131,7 +173,7 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
     }),
     dayOfWeek: startTime.toLocaleDateString('en-US', { timeZone: tz, weekday: 'long' }),
     lowestPrice: pricing?.lowest_price ?? null,
-    avgLeaguePrice: LEAGUE_AVG_PRICES[game.league] || 40,
+    avgLeaguePrice: getPriceBaseline(game.league, bigGame.playoffRound),
     pricingTransparency: pricing?.pricing_transparency || 'unknown',
     promotions: promotions.map(p => ({
       type: p.promo_type || 'unknown',
@@ -139,26 +181,70 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
       description: p.promo_description || '',
     })),
     isOutdoor,
+    // Live standings — grounded data so Claude doesn't fabricate team form
+    homeRecord: homeTeam?.wins != null && homeTeam?.losses != null
+      ? `${homeTeam.wins}-${homeTeam.losses}`
+      : null,
+    awayRecord: awayTeam?.wins != null && awayTeam?.losses != null
+      ? `${awayTeam.wins}-${awayTeam.losses}`
+      : null,
+    homeStreak: homeTeam?.streak ?? null,
+    // Big game fields
+    bigGameLabel: bigGame.bigGameLabel,
+    isElimination: bigGame.isElimination,
+    isFinals: bigGame.isFinals,
+    isRivalry: bigGame.isRivalry,
+    rivalryName: bigGame.rivalryName,
+    seriesRecord: bigGame.seriesRecord,
+    isOpeningDay: bigGame.isOpeningDay,
+    isPlayoffs: bigGame.isPlayoffs,
   });
 
-  // 2. Calculate Deal Score (rules-based)
+  // 2. Calculate Deal Score with boosted inputs
   const scoreResult = calculateDealScore({
     game: game as Game,
     pricing,
     promotions,
     isOutdoor,
-    weatherScore,
-    teamQuality,
+    weatherScore: boostedWeatherScore,
+    teamQuality: boostedTeamQuality,
+    isPlayoffs: bigGame.isPlayoffs,
+    isElimination: bigGame.isElimination || bigGame.isFinals,
+    isOpeningDay: bigGame.isOpeningDay,
+    playoffRound: bigGame.playoffRound,
     timezone: tz,
   });
 
-  // 3. Save score
+  // 3. Merge big game flags into AI context_flags
+  const bigGameFlags: string[] = [];
+  if (bigGame.isPlayoffs) bigGameFlags.push('playoff');
+  if (bigGame.isElimination) bigGameFlags.push('elimination');
+  if (bigGame.isFinals) bigGameFlags.push('finals');
+  if (bigGame.seriesGameNumber === 7) bigGameFlags.push('game-7');
+  if (bigGame.isRivalry) bigGameFlags.push('rivalry');
+  if (bigGame.isOpeningDay) bigGameFlags.push('opening-day');
+  // Store the round slug directly (e.g. 'conference-semis', 'conference-finals') so rescore.ts
+  // can derive the right price baseline without an extra DB query.
+  if (bigGame.playoffRound) bigGameFlags.push(bigGame.playoffRound);
+  const mergedContextFlags = [...new Set([...(enrichment.context_flags || []), ...bigGameFlags])];
+
+  // 4. Save score
   await supabase.from('scores').upsert({
     game_id: gameId,
     ...scoreResult,
+    score_breakdown: {
+      ...(scoreResult.score_breakdown as object),
+      bigGame: {
+        label: bigGame.bigGameLabel,
+        gameQualityBoost: bigGame.gameQualityBoost,
+        contextBoost: bigGame.contextBoost,
+        isElimination: bigGame.isElimination,
+        isRivalry: bigGame.isRivalry,
+      },
+    },
   }, { onConflict: 'game_id' });
 
-  // 4. Save insights
+  // 5. Save insights
   await supabase.from('game_insights').upsert({
     game_id: gameId,
     expectation_summary: enrichment.expectation_summary,
@@ -167,21 +253,23 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
     price_insight: enrichment.price_insight,
     promo_clarity: enrichment.promo_clarity,
     seat_expectation: enrichment.seat_expectation,
-    context_flags: enrichment.context_flags,
+    context_flags: mergedContextFlags,
     verdict: enrichment.verdict,
     why_worth_it: enrichment.why_worth_it,
-    confidence_score: 0.8,
+    confidence_score: bigGame.isPlayoffs ? 0.95 : 0.8,
   }, { onConflict: 'game_id' });
 
-  // 5. Save vibe tags
-  // Clear existing AI tags first
+  // 6. Save vibe tags — playoffs always get high-energy
   await supabase
     .from('tags')
     .delete()
     .eq('game_id', gameId)
     .eq('source_type', 'ai');
 
-  for (const tag of enrichment.vibe_tags) {
+  const vibeTags = [...enrichment.vibe_tags];
+  if (bigGame.isPlayoffs && !vibeTags.includes('high-energy')) vibeTags.push('high-energy');
+
+  for (const tag of vibeTags) {
     await supabase.from('tags').upsert({
       game_id: gameId,
       tag_name: tag,
@@ -190,10 +278,13 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
     }, { onConflict: 'game_id,tag_name' });
   }
 
-  // 6. Mark game as enriched
+  // 7. Auto-feature elimination games and finals
+  const updates: Record<string, unknown> = { pipeline_status: 'enriched' };
+  if (bigGame.isElimination || bigGame.isFinals) updates.is_featured = true;
+
   await supabase
     .from('games')
-    .update({ pipeline_status: 'enriched' })
+    .update(updates)
     .eq('id', gameId);
 }
 
@@ -215,7 +306,7 @@ export async function enrichGamesForCity(cityId: string): Promise<{
     .in('pipeline_status', ['pending', 'enriched'])
     .gte('start_time', new Date().toISOString())
     .order('start_time', { ascending: true })
-    .limit(20);
+    .limit(50);
 
   if (!games || games.length === 0) {
     return { enriched: 0, errors: [] };
@@ -308,10 +399,25 @@ export async function getTopGamesForCity(
 
   return sorted.slice(0, limit).map(game => {
     // Get the latest pricing snapshot
-    const latestPricing = game.pricing_snapshots
-      ?.sort((a: { captured_at: string }, b: { captured_at: string }) =>
+    const allSnapshots: PricingSnapshot[] = (game.pricing_snapshots || [])
+      .sort((a: { captured_at: string }, b: { captured_at: string }) =>
         new Date(b.captured_at).getTime() - new Date(a.captured_at).getTime()
-      )?.[0] || null;
+      );
+
+    // Deduplicate by source_name — keep the most recent per source
+    const seenSources = new Set<string>();
+    const dedupedPricing: PricingSnapshot[] = [];
+    for (const snap of allSnapshots) {
+      if (!seenSources.has(snap.source_name)) {
+        seenSources.add(snap.source_name);
+        dedupedPricing.push(snap);
+      }
+    }
+
+    // Headline price = cheapest priced source
+    const latestPricing = dedupedPricing
+      .filter(s => s.lowest_price != null)
+      .sort((a, b) => (a.lowest_price ?? 999) - (b.lowest_price ?? 999))[0] || dedupedPricing[0] || null;
 
     return {
       game: {
@@ -337,6 +443,7 @@ export async function getTopGamesForCity(
         updated_at: game.updated_at,
       },
       pricing: latestPricing,
+      all_pricing: dedupedPricing,
       promotions: game.promotions || [],
       score: Array.isArray(game.scores) ? game.scores[0] || null : game.scores || null,
       tags: Array.isArray(game.tags) ? game.tags : game.tags ? [game.tags] : [],

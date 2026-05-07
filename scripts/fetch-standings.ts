@@ -40,26 +40,25 @@ async function fetchMLBStandings(): Promise<Map<string, StandingsData>> {
 
 async function fetchMiLBStandings(): Promise<Map<string, StandingsData>> {
   const results = new Map<string, StandingsData>();
-  // MiLB league IDs: 104=International League (AAA), 117=Eastern League (AA) + others
-  // sportId=11 for AAA, 12 for AA, 13 for High-A, 14 for Single-A
-  for (const sportId of [11, 12, 13]) {
-    try {
-      const res = await fetch(`https://statsapi.mlb.com/api/v1/standings?sportId=${sportId}&season=2026`);
-      const data = await res.json();
-      for (const record of data.records || []) {
-        for (const t of record.teamRecords || []) {
-          const name = t.team.name;
-          results.set(name, {
-            wins: t.wins,
-            losses: t.losses,
-            winPct: parseFloat(t.winningPercentage) || 0,
-            streak: t.streak?.streakCode || null,
-          });
-        }
+  // MiLB uses leagueId, not sportId. Active league IDs span 110-128.
+  const MILB_LEAGUE_IDS = '110,111,112,113,116,117,118,120,121,122,123,124,125,126,128';
+  try {
+    const res = await fetch(
+      `https://statsapi.mlb.com/api/v1/standings?leagueId=${MILB_LEAGUE_IDS}&season=2026`
+    );
+    const data = await res.json();
+    for (const record of data.records || []) {
+      for (const t of record.teamRecords || []) {
+        results.set(t.team.name, {
+          wins: t.wins,
+          losses: t.losses,
+          winPct: parseFloat(t.winningPercentage) || 0,
+          streak: t.streak?.streakCode || null,
+        });
       }
-    } catch (e) {
-      console.error(`  MiLB sportId=${sportId} failed:`, e);
     }
+  } catch (e) {
+    console.error('  MiLB standings fetch failed:', e);
   }
   return results;
 }

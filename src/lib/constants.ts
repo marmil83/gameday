@@ -48,8 +48,7 @@ export const PRICING_LABELS: Record<string, string> = {
   base_price_only: 'before fees',
 };
 
-// Average ticket prices by league (baseline for scoring)
-// These are rough heuristics — can be refined with real data
+// Average ticket prices by league (baseline for regular season scoring)
 export const LEAGUE_AVG_PRICES: Record<string, number> = {
   MLB: 35,
   NBA: 55,
@@ -65,3 +64,54 @@ export const LEAGUE_AVG_PRICES: Record<string, number> = {
   USL: 18,
   WHL: 15,
 };
+
+// Playoff average prices by league + round.
+// Playoff ticket markets are completely different from regular season —
+// $59 for a Conference Semis game is exceptional even though it's "above" the $55 regular season avg.
+export const PLAYOFF_AVG_PRICES: Record<string, Partial<Record<string, number>>> = {
+  NBA: {
+    'first-round':       150,
+    'conference-semis':  200,
+    'conference-finals': 350,
+    'finals':            650,
+  },
+  NHL: {
+    'first-round':       120,
+    'conference-semis':  180,
+    'conference-finals': 300,
+    'finals':            550,
+  },
+  MLB: {
+    'first-round':       100,  // Wild Card
+    'conference-semis':  130,  // ALDS / NLDS
+    'conference-finals': 220,  // ALCS / NLCS
+    'finals':            550,  // World Series
+  },
+  NFL: {
+    'first-round':       300,  // Wild Card
+    'conference-semis':  500,  // Divisional
+    'conference-finals': 750,  // Conference Championship
+    'finals':          1_200,  // Super Bowl
+  },
+  AHL: {
+    'first-round':        60,
+    'conference-semis':   80,
+    'conference-finals': 110,
+    'finals':            150,
+  },
+};
+
+/**
+ * Returns the right price baseline for scoring — playoff-aware.
+ * Falls back to regular season average if no playoff data exists.
+ */
+export function getPriceBaseline(
+  league: string,
+  playoffRound?: string | null,
+): number {
+  if (playoffRound) {
+    const roundAvg = PLAYOFF_AVG_PRICES[league]?.[playoffRound];
+    if (roundAvg) return roundAvg;
+  }
+  return LEAGUE_AVG_PRICES[league] ?? 40;
+}

@@ -20,20 +20,37 @@ const LEAGUE_AVG_PRICES: Record<string, number> = {
   'MiLB-AAA': 15, 'MiLB-AA': 12, 'MiLB-A+': 10, AHL: 20, USL: 18, WHL: 15,
 };
 
+const PLAYOFF_AVG_PRICES: Record<string, Partial<Record<string, number>>> = {
+  NBA: { 'first-round': 150, 'conference-semis': 200, 'conference-finals': 350, 'finals': 650 },
+  NHL: { 'first-round': 120, 'conference-semis': 180, 'conference-finals': 300, 'finals': 550 },
+  MLB: { 'first-round': 100, 'conference-semis': 130, 'conference-finals': 220, 'finals': 550 },
+  NFL: { 'first-round': 300, 'conference-semis': 500, 'conference-finals': 750, 'finals': 1200 },
+  AHL: { 'first-round': 60, 'conference-semis': 80, 'conference-finals': 110, 'finals': 150 },
+};
+
+function getPriceBaseline(league: string, playoffRound?: string | null): number {
+  if (playoffRound) {
+    const roundAvg = PLAYOFF_AVG_PRICES[league]?.[playoffRound];
+    if (roundAvg) return roundAvg;
+  }
+  return LEAGUE_AVG_PRICES[league] ?? 40;
+}
+
 const DEAL_SCORE_WEIGHTS = { price: 0.4, experience: 0.2, game_quality: 0.2, timing: 0.1, context: 0.1 };
 
 function clamp(v: number, min: number, max: number) { return Math.min(max, Math.max(min, v)); }
 function round(v: number, d = 2) { return Math.round(v * 10 ** d) / 10 ** d; }
 
-function calcPriceScore(league: string, lowestPrice: number | null) {
+function calcPriceScore(league: string, lowestPrice: number | null, playoffRound?: string | null) {
   if (!lowestPrice) return { score: 5, reasoning: 'No pricing data' };
-  const avg = LEAGUE_AVG_PRICES[league] || 40;
+  const avg = getPriceBaseline(league, playoffRound);
   const ratio = lowestPrice / avg;
   let score = ratio <= 0.25 ? 10 : ratio <= 0.5 ? 8 + (0.5 - ratio) * 8 : ratio <= 1 ? 5 + (1 - ratio) * 6 : ratio <= 1.5 ? 3 + (1.5 - ratio) * 4 : ratio <= 2 ? 1 + (2 - ratio) * 4 : 1;
-  return { score: clamp(round(score), 0, 10), reasoning: `$${lowestPrice} vs avg $${avg}` };
+  const marketLabel = playoffRound ? 'playoff avg' : 'avg';
+  return { score: clamp(round(score), 0, 10), reasoning: `$${lowestPrice} vs ${marketLabel} $${avg}` };
 }
 
-function calcTimingScore(startTime: string, timezone?: string) {
+function calcTimingScore(startTime: string, timezone?: string, isPlayoffs?: boolean) {
   const d = new Date(startTime);
   let day: number;
   let hour: number;
@@ -55,12 +72,26 @@ function calcTimingScore(startTime: string, timezone?: string) {
   if (hour >= 17 && hour <= 19) score += 1.5;
   else if (hour >= 12 && hour <= 15) score += 1;
   else if (hour >= 20) score -= 0.5;
+  // Playoff weeknight boost — people rearrange their schedule for playoffs
+  if (isPlayoffs && day >= 1 && day <= 4) score += 1;
   return { score: clamp(round(score), 0, 10) };
 }
 
-function calcExperienceScore(promos: any[]) {
-  if (!promos || promos.length === 0) return { score: 3 };
-  let score = 3;
+function calcExperienceScore(promos: any[], isPlayoffs?: boolean, isElimination?: boolean) {
+  // Playoff baseline: virtually all home playoff games have rally towels, shirts, or elevated atmosphere.
+  // Apply even if no promos were scraped — they're just not listed on the regular promo page.
+  const playoffBaseline = isElimination ? 4.0 : isPlayoffs ? 3.0 : 0;
+
+  if (!promos || promos.length === 0) {
+    const reasoning = isElimination
+      ? 'Playoff atmosphere — expect giveaways and electric crowd'
+      : isPlayoffs
+        ? 'Playoff atmosphere — elevated energy and likely giveaways'
+        : 'No promotions detected';
+    return { score: clamp(3 + playoffBaseline, 0, 10), reasoning };
+  }
+
+  let score = 3 + playoffBaseline;
   for (const p of promos) {
     switch (p.promo_type) {
       case 'giveaway': score += 3; break;
@@ -72,7 +103,7 @@ function calcExperienceScore(promos: any[]) {
       default: score += 1;
     }
   }
-  return { score: clamp(round(score), 0, 10) };
+  return { score: clamp(round(score), 0, 10), reasoning: isPlayoffs ? 'Playoff atmosphere + promotions' : undefined };
 }
 
 function calcGameQuality(
@@ -150,24 +181,37 @@ async function enrichGame(game: any) {
   const { data: team } = await supabase.from('teams').select('venue_type, wins, losses, win_pct, streak').eq('id', game.home_team_id).single();
   const isOutdoor = team?.venue_type === 'outdoor';
 
-  // Get latest pricing
-  const { data: pricing } = await supabase
+  // Get best pricing: cheapest non-null price across all sources.
+  // A null SeatGeek snapshot must never shadow a real TickPick price.
+  let { data: pricing } = await supabase
     .from('pricing_snapshots')
     .select('*')
     .eq('game_id', game.id)
-    .order('captured_at', { ascending: false })
+    .not('lowest_price', 'is', null)
+    .order('lowest_price', { ascending: true })
     .limit(1)
     .single();
+  if (!pricing) {
+    const { data: fallback } = await supabase
+      .from('pricing_snapshots')
+      .select('*')
+      .eq('game_id', game.id)
+      .order('captured_at', { ascending: false })
+      .limit(1)
+      .single();
+    pricing = fallback;
+  }
 
   // Get promotions
   const { data: promos } = await supabase.from('promotions').select('*').eq('game_id', game.id);
 
   const lowestPrice = pricing?.lowest_price || null;
-  const avgPrice = LEAGUE_AVG_PRICES[game.league] || 40;
 
   // ── Big game detection ──────────────────────────────────────
   console.log(`  Detecting big game context...`);
   const bigGame = await detectBigGame(game.home_team_name, game.away_team_name, game.league, game.start_time);
+  // Playoff-aware price baseline — used for both scoring and AI copy
+  const avgPrice = getPriceBaseline(game.league, bigGame.playoffRound);
   if (bigGame.bigGameLabel) {
     console.log(`  🏆 Big game: ${bigGame.bigGameLabel} (+${bigGame.gameQualityBoost} GQ, +${bigGame.contextBoost} CTX)`);
   }
@@ -185,6 +229,16 @@ ${bigGame.isRivalry && bigGame.rivalryName ? `- RIVALRY GAME: ${bigGame.rivalryN
 ${bigGame.seriesRecord ? `- Series status: ${bigGame.seriesRecord}` : ''}
 ${bigGame.isOpeningDay ? '- OPENING DAY: First game of the season — always special.' : ''}`.trim()
     : '';
+
+  // Fetch away team record for grounding (before Claude call)
+  const { data: awayTeamForPrompt } = await supabase
+    .from('teams')
+    .select('wins, losses, streak')
+    .eq('name', game.away_team_name)
+    .single();
+  const awayTeamRecord = awayTeamForPrompt?.wins != null
+    ? `${awayTeamForPrompt.wins}-${awayTeamForPrompt.losses}${awayTeamForPrompt.streak ? ` (${awayTeamForPrompt.streak})` : ''}`
+    : 'unknown';
 
   // Call Claude for enrichment
   console.log(`  AI enriching...`);
@@ -206,7 +260,8 @@ Game Details:
 - Start: ${startTime.toLocaleString('en-US', { timeZone: tz, weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
 - Lowest ticket price: ${lowestPrice ? `$${lowestPrice}` : 'Unknown'}
 - Typical ${game.league} ticket: $${avgPrice}
-- ${game.home_team_name} record: ${team?.wins != null ? `${team.wins}-${team.losses}` : 'Unknown'}${team?.streak ? ` (streak: ${team.streak})` : ''}
+- ${game.home_team_name} record: ${team?.wins != null ? `${team.wins}-${team.losses}` : 'unknown'}${team?.streak ? ` (${team.streak})` : ''}
+- ${game.away_team_name} record: ${awayTeamRecord}
 ${bigGameSection}
 
 Promotions:
@@ -225,7 +280,7 @@ Generate the following as a JSON object:
 9. "vibe_tags": Array of 1-3 from: "family-friendly", "high-energy", "cheap-night", "date-night", "chill", "promo-driven"
 10. "promo_clarity": Practical promo guidance, or null if no promos.
 
-Do NOT fabricate facts. If price is unknown, say so. Return ONLY valid JSON.`
+IMPORTANT: Team records and streaks are provided above — use ONLY those values. Do NOT draw on any external or training knowledge about team performance or recent results. If price is unknown, say so. Return ONLY valid JSON.`
     }],
   });
 
@@ -276,9 +331,9 @@ Do NOT fabricate facts. If price is unknown, say so. Return ONLY valid JSON.`
   const baseGameQuality = calcGameQuality(homeTeamData, awayTeamData, game.league);
 
   // Calculate Deal Score — apply big game boosts on top of base scores
-  const price = calcPriceScore(game.league, lowestPrice);
-  const experience = calcExperienceScore(promos || []);
-  const timing = calcTimingScore(game.start_time, tz);
+  const price = calcPriceScore(game.league, lowestPrice, bigGame.playoffRound);
+  const experience = calcExperienceScore(promos || [], bigGame.isPlayoffs, bigGame.isElimination || bigGame.isFinals);
+  const timing = calcTimingScore(game.start_time, tz, bigGame.isPlayoffs);
 
   // Game quality: standings-based baseline + big game boost
   const gameQualityScore = clamp(baseGameQuality.score + bigGame.gameQualityBoost, 0, 10);
@@ -312,7 +367,8 @@ Do NOT fabricate facts. If price is unknown, say so. Return ONLY valid JSON.`
   if (bigGame.seriesGameNumber === 7) bigGameFlags.push('game-7');
   if (bigGame.isRivalry) bigGameFlags.push('rivalry');
   if (bigGame.isOpeningDay) bigGameFlags.push('opening-day');
-  if (bigGame.playoffRound === 'conference-finals') bigGameFlags.push('conference-finals');
+  // Store round slug directly so rescore.ts can derive price baseline from context_flags
+  if (bigGame.playoffRound) bigGameFlags.push(bigGame.playoffRound);
   const mergedContextFlags = [...new Set([...(enrichment.context_flags || []), ...bigGameFlags])];
 
   // Save score

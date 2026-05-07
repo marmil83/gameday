@@ -104,6 +104,11 @@ export async function ingestEventsForCity(cityId: string): Promise<{
   for (const team of teams as Team[]) {
     if (!team.seatgeek_slug) continue;
 
+    // Major-league games are owned by ESPN (espn-events.ts).
+    // SeatGeek is used only for minor leagues here — pricing for major leagues
+    // is attached separately by attachSeatGeekPricingForCity.
+    if (team.league_level === 'major') continue;
+
     const events = await fetchSeatGeekEvents(team.seatgeek_slug);
     totalFound += events.length;
 
@@ -116,11 +121,35 @@ export async function ingestEventsForCity(cityId: string): Promise<{
         ? event.venue.name.toLowerCase().includes(team.venue_name.split(' ')[0].toLowerCase())
         : homePerformer?.name === team.name;
 
+      // Normalise away team name — SeatGeek uses league/round strings like
+      // "NBA Western Conference Semifinals" or the home team itself for TBD matchups
+      const rawAwayName = awayPerformer?.name || '';
+      const homeName = homePerformer?.name || team.name;
+      const isTbdAway =
+        !rawAwayName ||
+        rawAwayName === homeName ||
+        /^(nba|nhl|mlb|nfl|mls|ahl|whl|wnba|nwsl|usl|milb)/i.test(rawAwayName);
+      const awayTeamName = isTbdAway ? 'TBD' : rawAwayName;
+
+      // ── Phantom event guard ──────────────────────────────────────────────────
+      // SeatGeek pre-lists "if" playoff tickets for EVERY team (even eliminated ones)
+      // using a fake placeholder start time — always 10:30 UTC (3:30 AM Pacific,
+      // 6:30 AM Eastern). No real sporting event starts before 10 AM local time.
+      // These phantom events flood the DB with games that will never happen.
+      // Detect them by: TBD opponent + suspiciously early local hour.
+      if (awayTeamName === 'TBD') {
+        const localHour = parseInt(event.datetime_local.split('T')[1]?.split(':')[0] ?? '12');
+        if (localHour < 10) {
+          // Phantom — skip. Don't log per-event; too noisy. Caller sees skipped count.
+          continue;
+        }
+      }
+
       const gameData = {
         home_team_id: team.id,
         away_team_id: team.id,
-        home_team_name: homePerformer?.name || team.name,
-        away_team_name: awayPerformer?.name || 'TBD',
+        home_team_name: homeName,
+        away_team_name: awayTeamName,
         league: team.league,
         venue: event.venue.name,
         city_id: cityId,
@@ -132,10 +161,15 @@ export async function ingestEventsForCity(cityId: string): Promise<{
         is_home_game: isHomeGame,
       };
 
-      // Upsert — don't duplicate events
+      // Upsert — don't duplicate events.
+      // ignoreDuplicates: false so pricing/affiliate_url stay fresh,
+      // but we use a merge that won't revert a corrected away_team_name.
       const { error: insertError } = await supabase
         .from('games')
-        .upsert(gameData, { onConflict: 'source_event_id,source' });
+        .upsert(gameData, {
+          onConflict: 'source_event_id,source',
+          ignoreDuplicates: false,
+        });
 
       if (insertError) {
         errors.push(`Failed to insert event ${event.id}: ${insertError.message}`);
@@ -143,34 +177,43 @@ export async function ingestEventsForCity(cityId: string): Promise<{
         totalInserted++;
       }
 
-      // Also store pricing snapshot if available
-      if (event.stats && event.stats.lowest_price != null) {
-        const { data: insertedGame } = await supabase
-          .from('games')
-          .select('id')
-          .eq('source_event_id', String(event.id))
-          .eq('source', 'seatgeek')
-          .single();
+      // Also store SeatGeek pricing snapshot (delete+insert so re-runs stay fresh)
+      const { data: insertedGame } = await supabase
+        .from('games')
+        .select('id')
+        .eq('source_event_id', String(event.id))
+        .eq('source', 'seatgeek')
+        .single();
 
-        if (!insertedGame?.id) continue;
+      if (insertedGame?.id) {
+        // Always update affiliate_url so we have a ticket link.
+        await supabase.from('games')
+          .update({ affiliate_url: event.url })
+          .eq('id', insertedGame.id);
 
-        const { error: pricingError } = await supabase
-          .from('pricing_snapshots')
-          .insert({
+        // Only write a pricing snapshot when SeatGeek has a real price.
+        // Null snapshots must never shadow a real TickPick price captured earlier.
+        const sgPrice = event.stats?.lowest_price ?? null;
+        if (sgPrice !== null) {
+          await supabase
+            .from('pricing_snapshots')
+            .delete()
+            .eq('game_id', insertedGame.id)
+            .eq('source_name', 'seatgeek');
+
+          await supabase.from('pricing_snapshots').insert({
             game_id: insertedGame.id,
             source_name: 'seatgeek',
-            lowest_price: event.stats.lowest_price,
-            avg_price: event.stats.average_price,
-            median_price: event.stats.median_price,
-            displayed_price: event.stats.lowest_price,
-            base_price: event.stats.lowest_price,
+            lowest_price: sgPrice,
+            avg_price: event.stats?.average_price ?? null,
+            median_price: event.stats?.median_price ?? null,
+            displayed_price: sgPrice,
+            base_price: sgPrice,
             pricing_transparency: 'base_price_only',
             affiliate_url: event.url,
-            listing_count: event.stats.listing_count,
+            listing_count: event.stats?.listing_count ?? null,
+            captured_at: new Date().toISOString(),
           });
-
-        if (pricingError) {
-          errors.push(`Failed to insert pricing for event ${event.id}: ${pricingError.message}`);
         }
       }
     }

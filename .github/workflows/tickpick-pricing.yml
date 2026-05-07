@@ -1,0 +1,42 @@
+name: TickPick Pricing
+
+on:
+  schedule:
+    # Morning run — 10:00 AM UTC (6 AM EDT / 3 AM PDT)
+    - cron: '0 10 * * *'
+    # Afternoon run — 9:00 PM UTC (5 PM EDT / 2 PM PDT)
+    - cron: '0 21 * * *'
+  workflow_dispatch: # allow manual trigger from GitHub UI
+
+jobs:
+  scrape-and-rescore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chrome for Puppeteer
+        run: npx puppeteer browsers install chrome
+
+      - name: Scrape TickPick pricing
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npx tsx scripts/scrape-prices.ts
+
+      - name: Rescore games with fresh pricing
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npx tsx scripts/rescore.ts
