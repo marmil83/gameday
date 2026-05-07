@@ -171,8 +171,9 @@ Game Details:
 - Start: ${context.startTime} (${context.dayOfWeek})
 - Lowest ticket price: ${context.lowestPrice ? `$${context.lowestPrice} (${context.pricingTransparency})` : 'Unknown'}
 - Typical ${context.league} ticket: $${context.avgLeaguePrice}
-- ${context.homeTeam} record: ${context.homeRecord ?? 'unknown'}${context.homeStreak ? ` (${context.homeStreak})` : ''}
+- ${context.homeTeam} record: ${context.homeRecord ?? 'unknown'}${context.homeStreak && !context.isPlayoffs ? ` (${context.homeStreak})` : ''}
 - ${context.awayTeam} record: ${context.awayRecord ?? 'unknown'}
+${context.isPlayoffs ? '- NOTE: Streak data reflects end of regular season — do NOT mention win/loss streaks for playoff games.' : ''}
 ${bigGameSection}
 
 Promotions:
