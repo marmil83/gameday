@@ -297,6 +297,15 @@ export async function ingestESPNEventsForCity(
       const matchedTeam = (leagueTeams as Team[]).find(t => teamMatchesESPN(t.name, espnHomeName));
       if (!matchedTeam) continue;
 
+      // Defensive sanity check: matched team's city_id must equal the cityId we're
+      // ingesting for. Catches bad seed data (e.g. an away team mistakenly seeded
+      // into an MVP city) and prevents ingesting that team's home games as if they
+      // belonged to this market.
+      if (matchedTeam.city_id !== cityId) {
+        errors.push(`Skipped ${espnHomeName}: team city_id ${matchedTeam.city_id} doesn't match ingest cityId ${cityId}. Move team to External city.`);
+        continue;
+      }
+
       found++;
 
       try {

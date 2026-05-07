@@ -4,9 +4,15 @@
 -- CITIES
 -- ============================================================
 
-INSERT INTO cities (name, state, timezone) VALUES
-  ('Detroit', 'MI', 'America/Detroit'),
-  ('Portland', 'OR', 'America/Los_Angeles')
+INSERT INTO cities (name, state, timezone, is_active) VALUES
+  ('Detroit', 'MI', 'America/Detroit', true),
+  ('Portland', 'OR', 'America/Los_Angeles', true),
+  -- "External" is a permanent placeholder for away teams whose markets we don't cover.
+  -- teams.city_id is NOT NULL, so any away team we track standings for (e.g. Lakers,
+  -- Thunder, Cavs) needs *some* city. They go here, NOT in an MVP city — otherwise
+  -- ESPN ingestion picks them up as home games for that city. is_active=false means
+  -- runFullPipeline never iterates them.
+  ('External', '', 'America/New_York', false)
 ON CONFLICT (name, state) DO NOTHING;
 
 -- ============================================================
