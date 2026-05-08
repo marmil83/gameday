@@ -90,7 +90,12 @@ VALUES
     (SELECT id FROM cities WHERE name = 'Portland'),
     'Providence Park', 'outdoor',
     'https://www.thornsfc.com/tickets/promotions',
-    'portland-thorns-fc')
+    'portland-thorns-fc'),
+  ('Portland Fire', 'Fire', 'POR', 'WNBA', 'major',
+    (SELECT id FROM cities WHERE name = 'Portland'),
+    'Moda Center', 'indoor',
+    'https://fire.wnba.com/tickets/promotions',
+    'portland-fire')
 ON CONFLICT DO NOTHING;
 
 -- Minor leagues
