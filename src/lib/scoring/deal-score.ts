@@ -185,14 +185,14 @@ function calculateGameQualityScore(inputs: ScoreInputs): { score: number; reason
     score += (inputs.standingsRelevance - 5) * 0.3;
   }
 
-  // Recent form — last-10 win pct picks up momentum that overall record misses
+  // Recent form — only trusted at 8+ L10 games (early-season noise guard)
   const homeL10Total = (inputs.homeLast10?.wins ?? 0) + (inputs.homeLast10?.losses ?? 0);
   const homeL10Pct = homeL10Total > 0 ? (inputs.homeLast10!.wins / homeL10Total) : null;
-  if (homeL10Pct != null && homeL10Pct >= 0.7) { score += 1; factors.push(`home L10 ${inputs.homeLast10!.wins}-${inputs.homeLast10!.losses}`); }
-  else if (homeL10Pct != null && homeL10Pct <= 0.3) { score -= 0.5; factors.push(`home cold L10`); }
+  if (homeL10Total >= 8 && homeL10Pct != null && homeL10Pct >= 0.7) { score += 1; factors.push(`home L10 ${inputs.homeLast10!.wins}-${inputs.homeLast10!.losses}`); }
+  else if (homeL10Total >= 8 && homeL10Pct != null && homeL10Pct <= 0.3) { score -= 0.5; factors.push(`home cold L10`); }
   const awayL10Total = (inputs.awayLast10?.wins ?? 0) + (inputs.awayLast10?.losses ?? 0);
   const awayL10Pct = awayL10Total > 0 ? (inputs.awayLast10!.wins / awayL10Total) : null;
-  if (awayL10Pct != null && awayL10Pct >= 0.7) { score += 0.5; factors.push('visitor hot'); }
+  if (awayL10Total >= 8 && awayL10Pct != null && awayL10Pct >= 0.7) { score += 0.5; factors.push('visitor hot'); }
 
   // Marquee matchup — both teams ≥ .600 is an A-list bill
   if ((inputs.homeWinPct ?? 0) >= 0.6 && (inputs.awayWinPct ?? 0) >= 0.6) {

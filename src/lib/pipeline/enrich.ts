@@ -127,8 +127,14 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
   const homePct = Number(homeTeam?.win_pct) || 0;
   const awayPct = awayTeam ? (Number(awayTeam.win_pct) || 0) : 0.5;
   const hasStandings = homeTeam?.wins != null && (homeTeam.wins > 0 || homeTeam.losses > 0);
+  // Sample-size guard: under 10 total games per team, win pct is too noisy
+  // to use as a quality signal — start at neutral and let big-game/opening-day
+  // boosts carry the score.
+  const homeGames = (homeTeam?.wins || 0) + (homeTeam?.losses || 0);
+  const awayGames = awayTeam ? (awayTeam.wins || 0) + (awayTeam.losses || 0) : 10;
+  const smallSample = homeGames < 10 || awayGames < 10;
   let teamQuality: number | undefined;
-  if (hasStandings) {
+  if (hasStandings && !smallSample) {
     const avgPct = (homePct + awayPct) / 2;
     teamQuality = 5 + (avgPct - 0.5) * 20;
     const pctDiff = Math.abs(homePct - awayPct);
@@ -138,6 +144,9 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
     const streakNum = parseInt(streak.replace(/\D/g, '')) || 0;
     if (streak.startsWith('W') && streakNum >= 3) teamQuality += 1;
     teamQuality = Math.max(0, Math.min(10, teamQuality));
+  } else if (hasStandings && smallSample) {
+    // Neutral baseline so opening-day/big-game boosts dominate, not penalty
+    teamQuality = 5;
   }
 
   // Big game detection — ESPN API + rivalry map
@@ -275,7 +284,15 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
   // Store the round slug directly (e.g. 'conference-semis', 'conference-finals') so rescore.ts
   // can derive the right price baseline without an extra DB query.
   if (effectivePlayoffRound) bigGameFlags.push(effectivePlayoffRound);
-  const mergedContextFlags = [...new Set([...(enrichment.context_flags || []), ...bigGameFlags])];
+  // Filter Claude's flags — opening-day is reliably detected from the game
+  // date (see detectOpeningDay), so we drop Claude's claim when ESPN's
+  // window-based check disagrees. Stops Claude from over-applying it to
+  // every early-season game.
+  const claudeFiltered = (enrichment.context_flags || []).filter(f => {
+    if (f === 'opening-day' && !bigGame.isOpeningDay) return false;
+    return true;
+  });
+  const mergedContextFlags = [...new Set([...claudeFiltered, ...bigGameFlags])];
 
   // 5. Save score
   await supabase.from('scores').upsert({

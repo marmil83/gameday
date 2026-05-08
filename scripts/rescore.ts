@@ -155,20 +155,31 @@ function calcGameQuality(
   const homePct = Number(homeTeam.win_pct) || 0;
   const awayPct = awayTeam ? (Number(awayTeam.win_pct) || 0) : 0.5;
 
-  const avgPct = (homePct + awayPct) / 2;
-  score += (avgPct - 0.5) * 5;
-  if (avgPct >= 0.55) factors.push('both teams competitive');
-  if (avgPct < 0.4) factors.push('both teams struggling');
+  // Sample-size guard: ignore standings math during early-season noise
+  const homeGames = (homeTeam.wins || 0) + (homeTeam.losses || 0);
+  const awayGames = awayTeam ? (awayTeam.wins || 0) + (awayTeam.losses || 0) : 10;
+  const smallSample = homeGames < 10 || awayGames < 10;
 
-  const pctDiff = Math.abs(homePct - awayPct);
-  if (pctDiff < 0.1) { score += 1; factors.push('evenly matched'); }
-  else if (pctDiff > 0.25) { score -= 0.5; factors.push('lopsided matchup'); }
+  if (!smallSample) {
+    const avgPct = (homePct + awayPct) / 2;
+    score += (avgPct - 0.5) * 5;
+    if (avgPct >= 0.55) factors.push('both teams competitive');
+    if (avgPct < 0.4) factors.push('both teams struggling');
+
+    const pctDiff = Math.abs(homePct - awayPct);
+    if (pctDiff < 0.1) { score += 1; factors.push('evenly matched'); }
+    else if (pctDiff > 0.25) { score -= 0.5; factors.push('lopsided matchup'); }
+  } else {
+    factors.push('early season — quality TBD');
+  }
 
   const homeL10 = last10Pct(homeTeam);
   const awayL10 = last10Pct(awayTeam);
-  if (homeL10 != null && homeL10 >= 0.7) { score += 1; factors.push(`home hot (L10: ${homeTeam.last_10_wins}-${homeTeam.last_10_losses})`); }
-  else if (homeL10 != null && homeL10 <= 0.3) { score -= 0.5; factors.push(`home cold (L10: ${homeTeam.last_10_wins}-${homeTeam.last_10_losses})`); }
-  if (awayL10 != null && awayL10 >= 0.7) { score += 0.5; factors.push('visitor hot'); }
+  const homeL10Total = (homeTeam.last_10_wins ?? 0) + (homeTeam.last_10_losses ?? 0);
+  const awayL10Total = (awayTeam?.last_10_wins ?? 0) + (awayTeam?.last_10_losses ?? 0);
+  if (homeL10Total >= 8 && homeL10 != null && homeL10 >= 0.7) { score += 1; factors.push(`home hot (L10: ${homeTeam.last_10_wins}-${homeTeam.last_10_losses})`); }
+  else if (homeL10Total >= 8 && homeL10 != null && homeL10 <= 0.3) { score -= 0.5; factors.push(`home cold (L10: ${homeTeam.last_10_wins}-${homeTeam.last_10_losses})`); }
+  if (awayL10Total >= 8 && awayL10 != null && awayL10 >= 0.7) { score += 0.5; factors.push('visitor hot'); }
 
   const homeStreak = homeTeam.streak || '';
   const homeStreakNum = parseInt(homeStreak.replace(/\D/g, '')) || 0;
@@ -227,6 +238,7 @@ async function rescoreGame(game: any) {
   const contextFlags: string[] = (insights?.context_flags as string[]) || [];
   const isPlayoffs = contextFlags.includes('playoff') || contextFlags.includes('elimination') || contextFlags.includes('finals');
   const isElimination = contextFlags.includes('elimination') || contextFlags.includes('finals');
+  const isOpeningDay = contextFlags.includes('opening-day');
   // Derive playoff round from context_flags — enrich.ts stores the slug directly (e.g. 'conference-semis')
   // If playoff but no round known, default to 'first-round' so we never score against regular season prices
   const detectedRound = KNOWN_PLAYOFF_ROUNDS.find(r => contextFlags.includes(r)) ?? null;
@@ -273,15 +285,23 @@ async function rescoreGame(game: any) {
   // Calculate all sub-scores (pure math, no AI)
   const price = calcPriceScore(game.league, lowestPrice, playoffRound);
   const experience = calcExperienceScore(promos || [], isPlayoffs, isElimination);
-  const gameQuality = calcGameQuality(homeTeamData, awayTeamForScoring);
+  const baseQuality = calcGameQuality(homeTeamData, awayTeamForScoring);
+  // Opening Day boost — historic occasion regardless of records
+  const openingDayQualityBoost = isOpeningDay ? 2.0 : 0;
+  const gameQuality = {
+    score: clamp(round(baseQuality.score + openingDayQualityBoost), 0, 10),
+    reasoning: isOpeningDay ? `${baseQuality.reasoning}, opening day` : baseQuality.reasoning,
+  };
   const timing = calcTimingScore(game.start_time, tz, isPlayoffs);
-  // Context score: weather (outdoor) + playoff boost preserved from enrichment
+  // Context score: weather (outdoor) + playoff/opening-day boost
   const baseContextScore = isOutdoor && weather ? weather.weather_score : 5;
   const playoffContextBoost = isElimination ? 5 : isPlayoffs ? 3 : 0;
-  const contextScore = clamp(baseContextScore + playoffContextBoost, 0, 10);
+  const openingDayContextBoost = isOpeningDay ? 1.5 : 0;
+  const contextScore = clamp(baseContextScore + playoffContextBoost + openingDayContextBoost, 0, 10);
   const contextReasons = [];
   if (isElimination) contextReasons.push('elimination game');
   else if (isPlayoffs) contextReasons.push('playoff game');
+  if (isOpeningDay) contextReasons.push('opening day');
   if (isOutdoor && weather) contextReasons.push(contextScore >= 7 ? 'great weather' : contextScore <= 3 ? 'weather concern' : 'fair weather');
   const context = { score: contextScore, reasoning: contextReasons.join(', ') || 'Standard conditions' };
 

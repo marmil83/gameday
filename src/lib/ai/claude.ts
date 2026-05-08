@@ -204,7 +204,7 @@ Generate the following as a JSON object:
 
 7. "seat_expectation": What the entry price likely gets you in plain English (e.g., "upper deck with a full view of the action", "lower bowl if you're lucky").
 
-8. "context_flags": Array of relevant flags from: "playoff", "elimination", "rivalry", "game-7", "finals", "conference-finals", "opening-day". CRITICAL: If this is a playoff game, you MUST also include the round slug — one of: "first-round", "conference-semis", "conference-finals", "finals". Infer the round from ticket prices relative to typical league averages (NHL first-round ~$120, conference-semis ~$180, conference-finals ~$300; NBA first-round ~$150, conference-semis ~$200). Always include a round slug when "playoff" is in the flags.
+8. "context_flags": Array of relevant flags from: "playoff", "elimination", "rivalry", "game-7", "finals", "conference-finals", "opening-day". CRITICAL: If this is a playoff game, you MUST also include the round slug — one of: "first-round", "conference-semis", "conference-finals", "finals". Infer the round from ticket prices relative to typical league averages (NHL first-round ~$120, conference-semis ~$180, conference-finals ~$300; NBA first-round ~$150, conference-semis ~$200). Always include a round slug when "playoff" is in the flags. ONLY use "opening-day" for the literal first regular-season game (league-wide opener or a franchise's debut/inaugural home game) — NEVER for "early-season" or "first home stand" games. The system independently verifies opening day from the date and will reject false claims.
 
 9. "vibe_tags": Array of 1-3 from: "family-friendly", "high-energy", "cheap-night", "date-night", "chill", "promo-driven"
 

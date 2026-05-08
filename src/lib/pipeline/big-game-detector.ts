@@ -318,6 +318,7 @@ function computeBoosts(ctx: {
   isFinals: boolean;
   seriesGameNumber: number | null;
   isRivalry: boolean;
+  isOpeningDay: boolean;
 }): { gameQualityBoost: number; contextBoost: number } {
   let gq = 0;
   let ctx2 = 0;
@@ -350,6 +351,11 @@ function computeBoosts(ctx: {
   }
 
   if (ctx.isRivalry) { gq += 1.5; }
+
+  // Opening Day — historic first game of the season. Standings are
+  // tiny-sample noise on opening week, so we can't lean on quality math;
+  // the right signal is the occasion itself.
+  if (ctx.isOpeningDay) { gq += 2.0; ctx2 += 1.5; }
 
   // Cap boosts — game quality max 6, context max 6 (scores clamped to 10 downstream)
   return {
@@ -413,6 +419,8 @@ function detectOpeningDay(league: string, gameDate: Date): boolean {
     case 'NHL': return month === 10 && day <= 20;
     case 'NFL': return month === 9 && day <= 15;
     case 'MLS': return month === 2 || (month === 3 && day <= 10);
+    case 'WNBA': return month === 5 && day <= 20;        // typical opens mid-May
+    case 'NWSL': return month === 3 && day >= 10 || month === 4 && day <= 5;
     default: return false;
   }
 }
@@ -461,6 +469,7 @@ export async function detectBigGame(
     isFinals,
     seriesGameNumber: espnInfo.gameNumber,
     isRivalry,
+    isOpeningDay,
   });
 
   // 7. Label
