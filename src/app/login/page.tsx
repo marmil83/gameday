@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
-import Logo from '@/app/components/Logo';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -36,7 +35,6 @@ export default function LoginPage() {
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="flex justify-center mb-3"><Logo size={40} /></div>
           <h1 className="text-2xl font-bold text-gray-900">Foamfinger Admin</h1>
           <p className="text-sm text-gray-500 mt-1">Sign in to manage games</p>
         </div>

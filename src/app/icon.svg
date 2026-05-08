@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-  <rect width="32" height="32" rx="8" fill="#FF9500"/>
-  <text x="16" y="16" text-anchor="middle" dominant-baseline="central"
-        font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif"
-        font-size="22" font-weight="900" fill="#ffffff"
-        transform="skewX(-6)" dx="1">1</text>
-</svg>

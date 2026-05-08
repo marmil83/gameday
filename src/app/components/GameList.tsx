@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from 'react';
 import type { GameCard as GameCardType } from '@/types/database';
 import GameCard from './GameCard';
 import CitySelector from './CitySelector';
-import Logo from './Logo';
 
 function formatLocalDate(d: Date): string {
   const year = d.getFullYear();
@@ -51,12 +50,9 @@ export default function GameList() {
       <header className="bg-white/80 backdrop-blur-md border-b border-black/5 sticky top-0 z-10">
         <div className="max-w-lg mx-auto px-5 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <Logo size={26} />
-              <div>
-                <h1 className="text-lg font-semibold tracking-tight" style={{ color: '#1d1d1f' }}>Foamfinger</h1>
-                <p className="text-xs mt-0.5" style={{ color: '#86868b' }}>Worth the trip?</p>
-              </div>
+            <div>
+              <h1 className="text-lg font-semibold tracking-tight" style={{ color: '#1d1d1f' }}>Foamfinger</h1>
+              <p className="text-xs mt-0.5" style={{ color: '#86868b' }}>Know Before You Go</p>
             </div>
             <CitySelector currentCity={city} onCityChange={setCity} />
           </div>
