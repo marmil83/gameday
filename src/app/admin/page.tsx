@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
+import Logo from '@/app/components/Logo';
 
 interface GameWithRelations {
   id: string;
@@ -131,8 +132,9 @@ export default function AdminDashboard() {
       {/* Admin Header */}
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <h1 className="text-lg font-bold text-gray-900">GameDay Admin</h1>
+          <div className="flex items-center gap-3">
+            <Logo size={22} />
+            <h1 className="text-lg font-bold text-gray-900">Foamfinger Admin</h1>
             <a href="/" className="text-xs text-blue-600 hover:underline">View public site</a>
           </div>
           <div className="flex items-center gap-3">

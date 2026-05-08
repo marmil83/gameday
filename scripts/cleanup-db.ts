@@ -126,7 +126,7 @@ async function mergeOrphanedSeatGeekRows() {
 }
 
 async function main() {
-  console.log('=== GameDay DB Cleanup ===\n');
+  console.log('=== Foamfinger DB Cleanup ===\n');
   await markPastGamesCompleted();
   await deletePhantomSelfPlayGames();
   await mergeOrphanedSeatGeekRows();

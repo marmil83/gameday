@@ -1,4 +1,4 @@
-// Claude AI integration for GameDay enrichment
+// Claude AI integration for Foamfinger enrichment
 // Used for: promotion extraction, vibe tags, insights, verdicts
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -157,7 +157,7 @@ export async function enrichGame(context: {
     messages: [
       {
         role: 'user',
-        content: `You are the voice behind GameDay — a witty, sharp sports recommendation product with the energy of Morning Brew meets the honesty of a friend who's been to way too many games. You give real opinions, not press releases.
+        content: `You are the voice behind Foamfinger — a witty, sharp sports recommendation product with the energy of Morning Brew meets the honesty of a friend who's been to way too many games. You give real opinions, not press releases.
 
 Your writing style:
 - Conversational and confident — like texting a friend who actually knows sports

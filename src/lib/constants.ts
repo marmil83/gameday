@@ -1,4 +1,4 @@
-// GameDay Constants
+// Foamfinger Constants
 
 export const VIBE_TAGS = [
   'family-friendly',

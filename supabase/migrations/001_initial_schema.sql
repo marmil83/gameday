@@ -1,4 +1,4 @@
--- GameDay MVP Database Schema
+-- Foamfinger MVP Database Schema
 -- Automation-first sports game recommendation engine
 
 -- ============================================================
