@@ -45,33 +45,34 @@ export async function extractPromotions(
     messages: [
       {
         role: 'user',
-        content: `You are a sports promotion data extractor. Given raw text from a team's official promotions page, extract structured promotion data.
+        content: `You are a sports promotion data extractor. Given raw text from a team's official promotions page, extract every dated promotion as structured data. The caller will filter by date afterwards — your job is to faithfully report what's on the page, not to filter or guess.
 
 Team: ${teamName}
-Target Date: ${gameDate}
+Reference date (for context only — do NOT bias your extraction toward this date): ${gameDate}
 
 Raw text from promotions page:
 ---
 ${rawText}
 ---
 
-Extract ALL promotions relevant to the target date. Return a JSON array of promotions.
+Extract EVERY promotion that has a clearly stated date on this page. Return a JSON array.
 
-Each promotion should have:
+Each promotion must have:
 - promo_type: one of "giveaway", "theme_night", "fireworks", "special_ticket", "family_promo", "food_bev_promo"
-- promo_item: specific item if applicable (e.g., "bobblehead", "rally towel"), or null
-- description: clean, concise description
-- date: the date this promotion applies to (YYYY-MM-DD format), or null if unclear
-- opponent: the opposing team if mentioned, or null
-- special_ticket_required: boolean — true if a special ticket package is needed
-- eligibility_details: e.g., "first 10,000 fans", or null
-- confidence_score: 0.0 to 1.0 — how confident you are this extraction is accurate
+- promo_item: the specific item exactly as named on the page (e.g., "T-shirt", "bobblehead", "rally towel", "acrylic mini court"). Null only if no item is mentioned (e.g., a theme night with no giveaway).
+- description: a clean one-sentence description that pulls ONLY from the text adjacent to this specific date. Do NOT mix in details from other dates.
+- date: YYYY-MM-DD. Required. Set to null ONLY if the page truly has no date for this promo (rare).
+- opponent: the opposing team if mentioned next to this entry, else null
+- special_ticket_required: boolean — true only if explicitly stated
+- eligibility_details: e.g., "first 10,000 fans" or "all fans in attendance", or null
+- confidence_score: 0.0–1.0
 
-IMPORTANT:
-- Only extract promotions that are clearly stated in the text
-- Do NOT invent or fabricate promotions
-- If the date doesn't match the target date, still include it but note the actual date
-- Set confidence_score lower if the text is ambiguous
+CRITICAL — anti-hallucination rules:
+- Each promotion's item, description, sponsor, and date MUST come from the same contiguous block of text. Never combine an item from one date with a description from another date.
+- If two dates each mention a different giveaway, return TWO separate entries — never merge them.
+- If a date appears with no clear giveaway/theme attached, do not invent one. Skip it.
+- Sponsor names ("courtesy of X") belong only with the entry where that sponsor is explicitly named.
+- Better to omit an unclear promotion than to fabricate one. Drop it and lower confidence on uncertain entries.
 
 Return ONLY valid JSON array. No other text.`,
       },

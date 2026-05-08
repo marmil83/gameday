@@ -28,6 +28,18 @@ async function scrapePageText(url: string): Promise<string | null> {
     // Remove scripts, styles, nav, footer
     $('script, style, nav, footer, header, iframe').remove();
 
+    // Inline image filenames + alt text into the body text — many promo
+    // schedules encode item names in the image (e.g. "MAY-12-DEBUT-PIN.png")
+    // and would otherwise be invisible to a text-only scraper.
+    $('img').each((_i, el) => {
+      const alt = $(el).attr('alt') || '';
+      const src = $(el).attr('src') || '';
+      const filename = src.split('/').pop()?.replace(/\.(png|jpe?g|webp|svg|gif)$/i, '').replace(/[-_]/g, ' ') || '';
+      if (alt || filename) {
+        $(el).replaceWith(` [image: ${alt} ${filename}] `);
+      }
+    });
+
     // Get main content text
     const text = $('main, article, .content, .promotions, .promos, [class*="promo"], body')
       .first()
@@ -35,8 +47,11 @@ async function scrapePageText(url: string): Promise<string | null> {
       .replace(/\s+/g, ' ')
       .trim();
 
-    // Limit to reasonable length for AI processing
-    return text.slice(0, 8000);
+    // Limit to reasonable length for AI processing.
+    // 20k chars covers a full-season promo schedule for most teams without
+    // blowing through Claude's context — was previously 8k which truncated
+    // mid-season and caused later games to lose their promos silently.
+    return text.slice(0, 20000);
   } catch (error) {
     console.error(`Scrape error for ${url}:`, error);
     return null;
@@ -69,28 +84,53 @@ export async function scrapePromotionsForTeam(
   // Use AI to extract promotions
   const promotions = await extractPromotions(rawText, team.name, targetDate);
 
-  // Find games for this team on this date
-  const dayStart = new Date(targetDate);
-  dayStart.setHours(0, 0, 0, 0);
-  const dayEnd = new Date(targetDate);
-  dayEnd.setHours(23, 59, 59, 999);
+  // Date matching is done in the team's LOCAL timezone — promo pages display
+  // dates as the team writes them (always local), not UTC. Comparing UTC
+  // boundaries to a "May 9" local date would mis-match games that start late
+  // evening (e.g. 7pm PT = 02:00 UTC next day).
+  const { data: city } = await supabase
+    .from('cities')
+    .select('timezone')
+    .eq('id', team.city_id)
+    .single();
+  const tz = city?.timezone || 'America/New_York';
+  const localFmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+  const startTimeToLocalDate = (iso: string) => localFmt.format(new Date(iso));
 
-  const { data: games } = await supabase
+  // Pull games in a generous ±36h window around targetDate, then filter by
+  // the team's local date so we get exactly the games belonging to that
+  // local calendar day.
+  const targetMs = new Date(`${targetDate}T12:00:00Z`).getTime();
+  const windowStart = new Date(targetMs - 36 * 3_600_000).toISOString();
+  const windowEnd = new Date(targetMs + 36 * 3_600_000).toISOString();
+  const { data: rawGames } = await supabase
     .from('games')
     .select('id, start_time')
     .eq('home_team_id', team.id)
-    .gte('start_time', dayStart.toISOString())
-    .lte('start_time', dayEnd.toISOString());
+    .gte('start_time', windowStart)
+    .lte('start_time', windowEnd);
+  const games = (rawGames || []).filter(g => startTimeToLocalDate(g.start_time) === targetDate);
 
-  if (!games || games.length === 0) {
-    return { extracted: promotions.length, errors: ['No games found for this date'] };
+  if (games.length === 0) {
+    return { extracted: 0, errors: ['No games found for this date'] };
   }
 
   let extracted = 0;
 
   for (const promo of promotions) {
-    // Match promo to the right game (by date if multiple games)
-    const matchedGame = games[0]; // For MVP, assume one game per team per day
+    // Strict date match — protects against AI hallucinations that conflate
+    // items across dates. If the AI extracted a date and it doesn't match
+    // the target, drop the row. Null dates are also dropped (no way to
+    // verify they belong to this game).
+    if (promo.date !== targetDate) {
+      continue;
+    }
+
+    // For MVP, assume one home game per team per day, so the matched game
+    // is unambiguous after the date filter.
+    const matchedGame = games[0];
 
     const { error } = await supabase.from('promotions').insert({
       game_id: matchedGame.id,

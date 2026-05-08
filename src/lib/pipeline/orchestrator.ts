@@ -76,14 +76,21 @@ export async function runPipelineForCity(cityId: string): Promise<PipelineResult
     errors: [...espnResult.errors, ...minorResult.errors],
   };
 
-  // Step 2: Scrape promotions for the next 7 days so upcoming games are covered
+  // Step 2: Scrape promotions for the next 7 days so upcoming games are covered.
+  // Dates are generated in the CITY's local timezone — promo pages list dates
+  // as the team writes them (always local), so we must match in the same frame.
   console.log(`[Pipeline] Step 2: Scraping promotions for city ${cityId}`);
   let totalPromoExtracted = 0;
   const promoErrors: string[] = [];
+  const { data: cityRow } = await supabase.from('cities').select('timezone').eq('id', cityId).single();
+  const cityTz = cityRow?.timezone || 'America/New_York';
+  const localFmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: cityTz, year: 'numeric', month: '2-digit', day: '2-digit',
+  });
   for (let i = 0; i < 7; i++) {
     const d = new Date();
     d.setDate(d.getDate() + i);
-    const dateStr = d.toISOString().split('T')[0];
+    const dateStr = localFmt.format(d); // local YYYY-MM-DD for this city
     const result = await scrapePromotionsForCity(cityId, dateStr);
     totalPromoExtracted += result.total_extracted;
     promoErrors.push(...result.errors);
