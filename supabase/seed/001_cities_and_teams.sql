@@ -94,7 +94,7 @@ VALUES
   ('Portland Fire', 'Fire', 'POR', 'WNBA', 'major',
     (SELECT id FROM cities WHERE name = 'Portland'),
     'Moda Center', 'indoor',
-    'https://fire.wnba.com/tickets/promotions',
+    'https://fire.wnba.com/promotional-schedule',
     'portland-fire')
 ON CONFLICT DO NOTHING;
 
