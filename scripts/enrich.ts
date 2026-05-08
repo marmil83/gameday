@@ -114,12 +114,27 @@ function calcExperienceScore(promos: any[], isPlayoffs?: boolean, isElimination?
   return { score: clamp(round(score), 0, 10), reasoning: isPlayoffs ? 'Playoff atmosphere + promotions' : undefined };
 }
 
+interface TeamStandings {
+  wins: number;
+  losses: number;
+  win_pct: number;
+  streak: string | null;
+  last_10_wins?: number | null;
+  last_10_losses?: number | null;
+}
+
+function last10Pct(t: TeamStandings | null | undefined): number | null {
+  if (!t || t.last_10_wins == null || t.last_10_losses == null) return null;
+  const total = t.last_10_wins + t.last_10_losses;
+  return total > 0 ? t.last_10_wins / total : null;
+}
+
 function calcGameQuality(
-  homeTeam: { wins: number; losses: number; win_pct: number; streak: string | null } | null,
-  awayTeam: { wins: number; losses: number; win_pct: number; streak: string | null } | null,
-  league: string,
+  homeTeam: TeamStandings | null,
+  awayTeam: TeamStandings | null,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _league: string,
 ) {
-  // No standings data → neutral baseline
   if (!homeTeam || !homeTeam.wins && !homeTeam.losses) {
     return { score: 5, reasoning: 'No standings data' };
   }
@@ -130,42 +145,28 @@ function calcGameQuality(
   const homePct = Number(homeTeam.win_pct) || 0;
   const awayPct = awayTeam ? (Number(awayTeam.win_pct) || 0) : 0.5;
 
-  // Combined team quality: average of both teams' win %
-  // Two great teams = exciting game, two bad teams = less exciting
   const avgPct = (homePct + awayPct) / 2;
-  // 0.600+ avg = both competitive → +2, 0.500 = average → 0, 0.400 = both struggling → -1
-  const qualityBoost = (avgPct - 0.5) * 5; // ranges from -2.5 to +2.5
-  score += qualityBoost;
+  score += (avgPct - 0.5) * 5;
   if (avgPct >= 0.55) factors.push('both teams competitive');
   if (avgPct < 0.4) factors.push('both teams struggling');
 
-  // Competitive matchup bonus: close win% = more exciting
   const pctDiff = Math.abs(homePct - awayPct);
-  if (pctDiff < 0.1) {
-    score += 1;
-    factors.push('evenly matched');
-  } else if (pctDiff > 0.25) {
-    score -= 0.5;
-    factors.push('lopsided matchup');
-  }
+  if (pctDiff < 0.1) { score += 1; factors.push('evenly matched'); }
+  else if (pctDiff > 0.25) { score -= 0.5; factors.push('lopsided matchup'); }
 
-  // Hot streak bonus
+  const homeL10 = last10Pct(homeTeam);
+  const awayL10 = last10Pct(awayTeam);
+  if (homeL10 != null && homeL10 >= 0.7) { score += 1; factors.push(`home hot (L10: ${homeTeam.last_10_wins}-${homeTeam.last_10_losses})`); }
+  else if (homeL10 != null && homeL10 <= 0.3) { score -= 0.5; factors.push('home cold L10'); }
+  if (awayL10 != null && awayL10 >= 0.7) { score += 0.5; factors.push('visitor hot'); }
+
   const homeStreak = homeTeam.streak || '';
   const homeStreakNum = parseInt(homeStreak.replace(/\D/g, '')) || 0;
-  if (homeStreak.startsWith('W') && homeStreakNum >= 3) {
-    score += 1;
-    factors.push(`home team on ${homeStreak}`);
-  }
-  if (homeStreak.startsWith('L') && homeStreakNum >= 5) {
-    score -= 0.5;
-    factors.push(`home team on ${homeStreak}`);
-  }
+  if (homeStreak.startsWith('W') && homeStreakNum >= 3) { score += 0.5; factors.push(`home on ${homeStreak}`); }
+  if (homeStreak.startsWith('L') && homeStreakNum >= 5) { score -= 0.5; factors.push(`home on ${homeStreak}`); }
+  if (homePct >= 0.6) { score += 0.5; factors.push('strong home team'); }
 
-  // Home team having a great season
-  if (homePct >= 0.6) {
-    score += 0.5;
-    factors.push('strong home team');
-  }
+  if (homePct >= 0.6 && awayPct >= 0.6) { score += 1; factors.push('marquee matchup'); }
 
   const homeRec = homeTeam.wins && homeTeam.losses ? `${homeTeam.wins}-${homeTeam.losses}` : null;
   const awayRec = awayTeam?.wins && awayTeam?.losses ? `${awayTeam.wins}-${awayTeam.losses}` : null;
@@ -186,7 +187,7 @@ async function enrichGame(game: any) {
   const tz = city?.timezone || 'America/New_York';
 
   // Get team venue type and standings
-  const { data: team } = await supabase.from('teams').select('venue_type, wins, losses, win_pct, streak').eq('id', game.home_team_id).single();
+  const { data: team } = await supabase.from('teams').select('venue_type, wins, losses, win_pct, streak, external_ids').eq('id', game.home_team_id).single();
   const isOutdoor = team?.venue_type === 'outdoor';
 
   // Get best pricing: cheapest non-null price across all sources.
@@ -240,15 +241,21 @@ ${bigGame.seriesRecord ? `- Series status: ${bigGame.seriesRecord}` : ''}
 ${bigGame.isOpeningDay ? '- OPENING DAY: First game of the season — always special.' : ''}`.trim()
     : '';
 
-  // Fetch away team record for grounding (before Claude call)
+  // Fetch away team record + last_10 for grounding (before Claude call)
   const { data: awayTeamForPrompt } = await supabase
     .from('teams')
-    .select('wins, losses, streak')
+    .select('wins, losses, streak, external_ids')
     .eq('name', game.away_team_name)
     .single();
   const awayTeamRecord = awayTeamForPrompt?.wins != null
     ? `${awayTeamForPrompt.wins}-${awayTeamForPrompt.losses}${awayTeamForPrompt.streak ? ` (${awayTeamForPrompt.streak})` : ''}`
     : 'unknown';
+  const homeL10x = (team?.external_ids as any) || {};
+  const awayL10x = (awayTeamForPrompt?.external_ids as any) || {};
+  const homeLast10Str = homeL10x.last_10_wins != null && homeL10x.last_10_losses != null
+    ? `${homeL10x.last_10_wins}-${homeL10x.last_10_losses}` : null;
+  const awayLast10Str = awayL10x.last_10_wins != null && awayL10x.last_10_losses != null
+    ? `${awayL10x.last_10_wins}-${awayL10x.last_10_losses}` : null;
 
   // Call Claude for enrichment
   console.log(`  AI enriching...`);
@@ -270,8 +277,8 @@ Game Details:
 - Start: ${startTime.toLocaleString('en-US', { timeZone: tz, weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
 - Lowest ticket price: ${lowestPrice ? `$${lowestPrice}` : 'Unknown'}
 - Typical ${game.league} ticket: $${avgPrice}
-- ${game.home_team_name} record: ${team?.wins != null ? `${team.wins}-${team.losses}` : 'unknown'}${team?.streak ? ` (${team.streak})` : ''}
-- ${game.away_team_name} record: ${awayTeamRecord}
+- ${game.home_team_name} record: ${team?.wins != null ? `${team.wins}-${team.losses}` : 'unknown'}${team?.streak ? ` (${team.streak})` : ''}${homeLast10Str ? `, last 10: ${homeLast10Str}` : ''}
+- ${game.away_team_name} record: ${awayTeamRecord}${awayLast10Str ? `, last 10: ${awayLast10Str}` : ''}
 ${bigGameSection}
 
 Promotions:
@@ -325,20 +332,32 @@ IMPORTANT: Team records and streaks are provided above — use ONLY those values
     }
   }
 
-  // Fetch standings for both teams to compute game quality
+  // Fetch standings + recent form for both teams to compute game quality
   const { data: homeTeamData } = await supabase
     .from('teams')
-    .select('wins, losses, win_pct, streak')
+    .select('wins, losses, win_pct, streak, external_ids')
     .eq('id', game.home_team_id)
     .single();
 
   const { data: awayTeamData } = await supabase
     .from('teams')
-    .select('wins, losses, win_pct, streak')
+    .select('wins, losses, win_pct, streak, external_ids')
     .eq('name', game.away_team_name)
     .single();
 
-  const baseGameQuality = calcGameQuality(homeTeamData, awayTeamData, game.league);
+  // Hoist last_10 from external_ids so calcGameQuality can use it
+  const homeWithL10 = homeTeamData ? {
+    ...homeTeamData,
+    last_10_wins: (homeTeamData.external_ids as any)?.last_10_wins ?? null,
+    last_10_losses: (homeTeamData.external_ids as any)?.last_10_losses ?? null,
+  } : null;
+  const awayWithL10 = awayTeamData ? {
+    ...awayTeamData,
+    last_10_wins: (awayTeamData.external_ids as any)?.last_10_wins ?? null,
+    last_10_losses: (awayTeamData.external_ids as any)?.last_10_losses ?? null,
+  } : null;
+
+  const baseGameQuality = calcGameQuality(homeWithL10, awayWithL10, game.league);
 
   // Calculate Deal Score — apply big game boosts on top of base scores
   // Combine ESPN detection + Claude's context_flags as source of truth for playoff status.

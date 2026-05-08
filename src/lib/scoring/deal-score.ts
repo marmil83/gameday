@@ -18,7 +18,7 @@ interface ScoreInputs {
   // These can be provided by AI or rules
   isRivalry?: boolean;
   hasStarPlayers?: boolean;
-  teamQuality?: number;       // 0-10, based on standings
+  teamQuality?: number;       // 0-10, baseline from standings (computed in enrich.ts)
   standingsRelevance?: number; // 0-10
   isPlayoffs?: boolean;
   isElimination?: boolean;    // elimination or finals game
@@ -27,6 +27,13 @@ interface ScoreInputs {
   weatherScore?: number;       // 0-10, 10 = perfect weather
   isOutdoor?: boolean;
   timezone?: string;           // IANA timezone for local time calculations
+  // Recent-form signal — both teams' last-10 records when known
+  homeLast10?: { wins: number; losses: number } | null;
+  awayLast10?: { wins: number; losses: number } | null;
+  // Marquee matchup — both teams' overall win pct, used to detect when both
+  // teams are top-quality. Computed by caller from standings.
+  homeWinPct?: number | null;
+  awayWinPct?: number | null;
 }
 
 interface ScoreResult {
@@ -176,6 +183,21 @@ function calculateGameQualityScore(inputs: ScoreInputs): { score: number; reason
   }
   if (inputs.standingsRelevance !== undefined) {
     score += (inputs.standingsRelevance - 5) * 0.3;
+  }
+
+  // Recent form — last-10 win pct picks up momentum that overall record misses
+  const homeL10Total = (inputs.homeLast10?.wins ?? 0) + (inputs.homeLast10?.losses ?? 0);
+  const homeL10Pct = homeL10Total > 0 ? (inputs.homeLast10!.wins / homeL10Total) : null;
+  if (homeL10Pct != null && homeL10Pct >= 0.7) { score += 1; factors.push(`home L10 ${inputs.homeLast10!.wins}-${inputs.homeLast10!.losses}`); }
+  else if (homeL10Pct != null && homeL10Pct <= 0.3) { score -= 0.5; factors.push(`home cold L10`); }
+  const awayL10Total = (inputs.awayLast10?.wins ?? 0) + (inputs.awayLast10?.losses ?? 0);
+  const awayL10Pct = awayL10Total > 0 ? (inputs.awayLast10!.wins / awayL10Total) : null;
+  if (awayL10Pct != null && awayL10Pct >= 0.7) { score += 0.5; factors.push('visitor hot'); }
+
+  // Marquee matchup — both teams ≥ .600 is an A-list bill
+  if ((inputs.homeWinPct ?? 0) >= 0.6 && (inputs.awayWinPct ?? 0) >= 0.6) {
+    score += 1;
+    factors.push('marquee matchup');
   }
 
   const reasoning = factors.length > 0

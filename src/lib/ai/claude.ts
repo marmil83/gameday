@@ -111,6 +111,9 @@ export async function enrichGame(context: {
   homeRecord?: string | null;   // e.g. "18-18"
   awayRecord?: string | null;
   homeStreak?: string | null;   // e.g. "W3" or "L1"
+  // Recent form (last 10 games) — useful for verdict copy when standings sample is small
+  homeLast10?: string | null;   // e.g. "7-3"
+  awayLast10?: string | null;
   // Big game context — injected by detectBigGame
   bigGameLabel?: string | null;
   isElimination?: boolean;
@@ -177,8 +180,8 @@ Game Details:
 - Start: ${context.startTime} (${context.dayOfWeek})
 - Lowest ticket price: ${context.lowestPrice ? `$${context.lowestPrice} (${context.pricingTransparency})` : 'Unknown'}
 - Typical ${context.league} ticket: $${context.avgLeaguePrice}
-- ${context.homeTeam} record: ${context.homeRecord ?? 'unknown'}${context.homeStreak && !context.isPlayoffs ? ` (${context.homeStreak})` : ''}
-- ${context.awayTeam} record: ${context.awayRecord ?? 'unknown'}
+- ${context.homeTeam} record: ${context.homeRecord ?? 'unknown'}${context.homeStreak && !context.isPlayoffs ? ` (${context.homeStreak})` : ''}${context.homeLast10 && !context.isPlayoffs ? `, last 10: ${context.homeLast10}` : ''}
+- ${context.awayTeam} record: ${context.awayRecord ?? 'unknown'}${context.awayLast10 && !context.isPlayoffs ? `, last 10: ${context.awayLast10}` : ''}
 ${context.isPlayoffs ? '- NOTE: Streak data reflects end of regular season — do NOT mention win/loss streaks for playoff games.' : ''}
 ${bigGameSection}${playoffLanguageRule}
 

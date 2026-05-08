@@ -126,9 +126,24 @@ function calcExperienceScore(promos: any[], isPlayoffs?: boolean, isElimination?
   };
 }
 
+interface TeamStandings {
+  wins: number;
+  losses: number;
+  win_pct: number;
+  streak: string | null;
+  last_10_wins?: number | null;
+  last_10_losses?: number | null;
+}
+
+function last10Pct(t: TeamStandings | null | undefined): number | null {
+  if (!t || t.last_10_wins == null || t.last_10_losses == null) return null;
+  const total = t.last_10_wins + t.last_10_losses;
+  return total > 0 ? t.last_10_wins / total : null;
+}
+
 function calcGameQuality(
-  homeTeam: { wins: number; losses: number; win_pct: number; streak: string | null } | null,
-  awayTeam: { wins: number; losses: number; win_pct: number; streak: string | null } | null,
+  homeTeam: TeamStandings | null,
+  awayTeam: TeamStandings | null,
 ) {
   if (!homeTeam || (!homeTeam.wins && !homeTeam.losses)) {
     return { score: 5, reasoning: 'No standings data' };
@@ -141,8 +156,7 @@ function calcGameQuality(
   const awayPct = awayTeam ? (Number(awayTeam.win_pct) || 0) : 0.5;
 
   const avgPct = (homePct + awayPct) / 2;
-  const qualityBoost = (avgPct - 0.5) * 5;
-  score += qualityBoost;
+  score += (avgPct - 0.5) * 5;
   if (avgPct >= 0.55) factors.push('both teams competitive');
   if (avgPct < 0.4) factors.push('both teams struggling');
 
@@ -150,12 +164,19 @@ function calcGameQuality(
   if (pctDiff < 0.1) { score += 1; factors.push('evenly matched'); }
   else if (pctDiff > 0.25) { score -= 0.5; factors.push('lopsided matchup'); }
 
+  const homeL10 = last10Pct(homeTeam);
+  const awayL10 = last10Pct(awayTeam);
+  if (homeL10 != null && homeL10 >= 0.7) { score += 1; factors.push(`home hot (L10: ${homeTeam.last_10_wins}-${homeTeam.last_10_losses})`); }
+  else if (homeL10 != null && homeL10 <= 0.3) { score -= 0.5; factors.push(`home cold (L10: ${homeTeam.last_10_wins}-${homeTeam.last_10_losses})`); }
+  if (awayL10 != null && awayL10 >= 0.7) { score += 0.5; factors.push('visitor hot'); }
+
   const homeStreak = homeTeam.streak || '';
   const homeStreakNum = parseInt(homeStreak.replace(/\D/g, '')) || 0;
-  if (homeStreak.startsWith('W') && homeStreakNum >= 3) { score += 1; factors.push(`home team on ${homeStreak}`); }
-  if (homeStreak.startsWith('L') && homeStreakNum >= 5) { score -= 0.5; factors.push(`home team on ${homeStreak}`); }
-
+  if (homeStreak.startsWith('W') && homeStreakNum >= 3) { score += 0.5; factors.push(`home on ${homeStreak}`); }
+  if (homeStreak.startsWith('L') && homeStreakNum >= 5) { score -= 0.5; factors.push(`home on ${homeStreak}`); }
   if (homePct >= 0.6) { score += 0.5; factors.push('strong home team'); }
+
+  if (homePct >= 0.6 && awayPct >= 0.6) { score += 1; factors.push('marquee matchup'); }
 
   const homeRec = homeTeam.wins && homeTeam.losses ? `${homeTeam.wins}-${homeTeam.losses}` : null;
   const awayRec = awayTeam?.wins && awayTeam?.losses ? `${awayTeam.wins}-${awayTeam.losses}` : null;
@@ -176,7 +197,7 @@ async function rescoreGame(game: any) {
   // Get team venue type and standings
   const { data: team } = await supabase
     .from('teams')
-    .select('venue_type, wins, losses, win_pct, streak')
+    .select('venue_type, wins, losses, win_pct, streak, external_ids')
     .eq('id', game.home_team_id)
     .single();
 
@@ -214,7 +235,7 @@ async function rescoreGame(game: any) {
   // Get away team standings
   const { data: awayTeamData } = await supabase
     .from('teams')
-    .select('wins, losses, win_pct, streak')
+    .select('wins, losses, win_pct, streak, external_ids')
     .eq('name', game.away_team_name)
     .single();
 
@@ -236,12 +257,23 @@ async function rescoreGame(game: any) {
   }
 
   const lowestPrice = pricing?.lowest_price || null;
-  const homeTeamData = team ? { wins: team.wins, losses: team.losses, win_pct: team.win_pct, streak: team.streak } : null;
+  const homeExt = (team?.external_ids as { last_10_wins?: number; last_10_losses?: number } | null) || null;
+  const awayExt = (awayTeamData?.external_ids as { last_10_wins?: number; last_10_losses?: number } | null) || null;
+  const homeTeamData = team ? {
+    wins: team.wins, losses: team.losses, win_pct: team.win_pct, streak: team.streak,
+    last_10_wins: homeExt?.last_10_wins ?? null,
+    last_10_losses: homeExt?.last_10_losses ?? null,
+  } : null;
+  const awayTeamForScoring = awayTeamData ? {
+    wins: awayTeamData.wins, losses: awayTeamData.losses, win_pct: awayTeamData.win_pct, streak: awayTeamData.streak,
+    last_10_wins: awayExt?.last_10_wins ?? null,
+    last_10_losses: awayExt?.last_10_losses ?? null,
+  } : null;
 
   // Calculate all sub-scores (pure math, no AI)
   const price = calcPriceScore(game.league, lowestPrice, playoffRound);
   const experience = calcExperienceScore(promos || [], isPlayoffs, isElimination);
-  const gameQuality = calcGameQuality(homeTeamData, awayTeamData);
+  const gameQuality = calcGameQuality(homeTeamData, awayTeamForScoring);
   const timing = calcTimingScore(game.start_time, tz, isPlayoffs);
   // Context score: weather (outdoor) + playoff boost preserved from enrichment
   const baseContextScore = isOutdoor && weather ? weather.weather_score : 5;

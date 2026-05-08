@@ -81,21 +81,30 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
     .single();
   const tz = city?.timezone || 'America/New_York';
 
-  // Get home team info (venue type + standings)
+  // Get home team info (venue type + standings + recent form)
   const { data: homeTeam } = await supabase
     .from('teams')
-    .select('venue_type, wins, losses, win_pct, streak')
+    .select('venue_type, wins, losses, win_pct, streak, external_ids')
     .eq('id', game.home_team_id)
     .single();
 
   const isOutdoor = homeTeam?.venue_type === 'outdoor';
 
-  // Get away team standings (may not exist if team isn't in our DB)
+  // Get away team standings (may not exist if team isn't in our DB; the
+  // standings fetcher auto-discovers and seeds these in External city)
   const { data: awayTeam } = await supabase
     .from('teams')
-    .select('wins, losses, win_pct, streak')
+    .select('wins, losses, win_pct, streak, external_ids')
     .eq('name', game.away_team_name)
     .single();
+
+  // Pull last_10 from external_ids for both teams (null when not yet captured)
+  const homeExt = (homeTeam?.external_ids as { last_10_wins?: number; last_10_losses?: number } | null) || null;
+  const awayExt = (awayTeam?.external_ids as { last_10_wins?: number; last_10_losses?: number } | null) || null;
+  const homeLast10 = homeExt?.last_10_wins != null && homeExt?.last_10_losses != null
+    ? { wins: homeExt.last_10_wins, losses: homeExt.last_10_losses } : null;
+  const awayLast10 = awayExt?.last_10_wins != null && awayExt?.last_10_losses != null
+    ? { wins: awayExt.last_10_wins, losses: awayExt.last_10_losses } : null;
 
   // Fetch weather for outdoor venues
   let weatherScore: number | undefined;
@@ -208,6 +217,8 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
       ? `${awayTeam.wins}-${awayTeam.losses}`
       : null,
     homeStreak: homeTeam?.streak ?? null,
+    homeLast10: homeLast10 ? `${homeLast10.wins}-${homeLast10.losses}` : null,
+    awayLast10: awayLast10 ? `${awayLast10.wins}-${awayLast10.losses}` : null,
     // Big game fields
     bigGameLabel: bigGame.bigGameLabel,
     isElimination: isEliminationForPrompt,
@@ -244,7 +255,13 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
     isElimination: isEliminationByAnySource,
     isOpeningDay: bigGame.isOpeningDay,
     playoffRound: effectivePlayoffRound,
+    isRivalry: bigGame.isRivalry,
     timezone: tz,
+    // Recent form + marquee inputs — populated when standings are available
+    homeLast10,
+    awayLast10,
+    homeWinPct: homeTeam?.win_pct != null ? Number(homeTeam.win_pct) : null,
+    awayWinPct: awayTeam?.win_pct != null ? Number(awayTeam.win_pct) : null,
   });
 
   // 4. Merge big game flags into AI context_flags
