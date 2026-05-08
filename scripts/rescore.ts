@@ -133,6 +133,7 @@ interface TeamStandings {
   streak: string | null;
   last_10_wins?: number | null;
   last_10_losses?: number | null;
+  ties?: number | null;
 }
 
 function last10Pct(t: TeamStandings | null | undefined): number | null {
@@ -155,9 +156,10 @@ function calcGameQuality(
   const homePct = Number(homeTeam.win_pct) || 0;
   const awayPct = awayTeam ? (Number(awayTeam.win_pct) || 0) : 0.5;
 
-  // Sample-size guard: ignore standings math during early-season noise
-  const homeGames = (homeTeam.wins || 0) + (homeTeam.losses || 0);
-  const awayGames = awayTeam ? (awayTeam.wins || 0) + (awayTeam.losses || 0) : 10;
+  // Sample-size guard: ignore standings math during early-season noise.
+  // Ties counted for soccer (MLS/NWSL).
+  const homeGames = (homeTeam.wins || 0) + (homeTeam.losses || 0) + (homeTeam.ties || 0);
+  const awayGames = awayTeam ? (awayTeam.wins || 0) + (awayTeam.losses || 0) + (awayTeam.ties || 0) : 10;
   const smallSample = homeGames < 10 || awayGames < 10;
 
   if (!smallSample) {
@@ -269,17 +271,20 @@ async function rescoreGame(game: any) {
   }
 
   const lowestPrice = pricing?.lowest_price || null;
-  const homeExt = (team?.external_ids as { last_10_wins?: number; last_10_losses?: number } | null) || null;
-  const awayExt = (awayTeamData?.external_ids as { last_10_wins?: number; last_10_losses?: number } | null) || null;
+  type ExtIds = { last_10_wins?: number; last_10_losses?: number; ties?: number };
+  const homeExt = (team?.external_ids as ExtIds | null) || null;
+  const awayExt = (awayTeamData?.external_ids as ExtIds | null) || null;
   const homeTeamData = team ? {
     wins: team.wins, losses: team.losses, win_pct: team.win_pct, streak: team.streak,
     last_10_wins: homeExt?.last_10_wins ?? null,
     last_10_losses: homeExt?.last_10_losses ?? null,
+    ties: homeExt?.ties ?? null,
   } : null;
   const awayTeamForScoring = awayTeamData ? {
     wins: awayTeamData.wins, losses: awayTeamData.losses, win_pct: awayTeamData.win_pct, streak: awayTeamData.streak,
     last_10_wins: awayExt?.last_10_wins ?? null,
     last_10_losses: awayExt?.last_10_losses ?? null,
+    ties: awayExt?.ties ?? null,
   } : null;
 
   // Calculate all sub-scores (pure math, no AI)

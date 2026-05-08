@@ -8,6 +8,12 @@ import { createServiceClient } from '../supabase/server';
 interface StandingsData {
   wins: number;
   losses: number;
+  // Soccer leagues (MLS/NWSL) have draws. Captured separately so they don't
+  // get lost when computing total games or win_pct. Null for win/loss-only
+  // leagues (MLB/NBA/NHL/NFL/WNBA/MiLB).
+  ties: number | null;
+  // Draws-aware win_pct — for soccer this is (W + D/2) / GP so a tie counts
+  // as half a win. For other leagues it's the standard W/(W+L).
   winPct: number;
   streak: string | null;
   // Recent form — richer signal than streak alone. Either source-provided
@@ -37,6 +43,7 @@ async function fetchMLBStandings(): Promise<Map<string, StandingsData>> {
           losses: t.losses,
           winPct: parseFloat(t.winningPercentage) || 0,
           streak: t.streak?.streakCode || null,
+          ties: null,
           last10Wins: last10?.wins ?? null,
           last10Losses: last10?.losses ?? null,
           // MLB API doesn't expose logo URL — use ESPN's MLB logo CDN by team id
@@ -69,6 +76,7 @@ async function fetchMiLBStandings(): Promise<Map<string, StandingsData>> {
           losses: t.losses,
           winPct: parseFloat(t.winningPercentage) || 0,
           streak: t.streak?.streakCode || null,
+          ties: null,
           last10Wins: last10?.wins ?? null,
           last10Losses: last10?.losses ?? null,
           logoUrl: null, // MiLB logos vary widely — leave null, let manual seeds win
@@ -103,6 +111,7 @@ async function fetchNHLStandings(): Promise<Map<string, StandingsData>> {
       results.set(fullName, {
         wins: w,
         losses: l,
+        ties: null, // NHL has overtime losses, not ties — tracked in `total` already
         winPct: total > 0 ? w / total : 0,
         streak: t.streakCode || null,
         last10Wins: l10W,
@@ -118,7 +127,7 @@ async function fetchNHLStandings(): Promise<Map<string, StandingsData>> {
 
 // ── NBA, WNBA, NFL, MLS, NWSL (ESPN API) ────────────────────────────────────
 
-async function fetchESPNStandings(sport: string, league: string): Promise<Map<string, StandingsData>> {
+async function fetchESPNStandings(sport: string, league: string, hasTies = false): Promise<Map<string, StandingsData>> {
   const results = new Map<string, StandingsData>();
   try {
     const res = await fetch(`https://site.api.espn.com/apis/v2/sports/${sport}/${league}/standings`, {
@@ -145,12 +154,22 @@ async function fetchESPNStandings(sport: string, league: string): Promise<Map<st
         }
         const w = stats.wins || 0;
         const l = stats.losses || 0;
-        const total = w + l;
+        // Soccer leagues report ties under "ties" or via gamesPlayed - W - L
+        const ties = hasTies
+          ? (stats.ties ?? Math.max(0, (stats.gamesPlayed || 0) - w - l))
+          : null;
+        const totalGames = w + l + (ties || 0);
+        // Draws-aware win_pct: tie counts as half a win for soccer.
+        // For other leagues this collapses to standard W/(W+L).
+        const winPct = hasTies
+          ? (totalGames > 0 ? (w + (ties || 0) * 0.5) / totalGames : 0)
+          : (stats.winPercent || stats.winPercentage || (w + l > 0 ? w / (w + l) : 0));
         const logoUrl = entry.team?.logos?.[0]?.href ?? null;
         results.set(name, {
           wins: w,
           losses: l,
-          winPct: stats.winPercent || stats.winPercentage || (total > 0 ? w / total : 0),
+          ties,
+          winPct,
           streak: stats.streak
             ? stats.streak > 0 ? `W${Math.round(stats.streak)}` : `L${Math.round(Math.abs(stats.streak))}`
             : null,
@@ -194,8 +213,8 @@ export async function updateStandings(): Promise<{ updated: number; errors: stri
     fetchNHLStandings(),
     fetchESPNStandings('basketball', 'nba'),
     fetchESPNStandings('football', 'nfl'),
-    fetchESPNStandings('soccer', 'usa.1'),       // MLS
-    fetchESPNStandings('soccer', 'usa.nwsl'),
+    fetchESPNStandings('soccer', 'usa.1', true),       // MLS — has ties
+    fetchESPNStandings('soccer', 'usa.nwsl', true),    // NWSL — has ties
     fetchESPNStandings('basketball', 'wnba'),
   ]);
 
@@ -232,11 +251,14 @@ export async function updateStandings(): Promise<{ updated: number; errors: stri
       continue;
     }
 
-    // Persist last_10 in external_ids (no schema change needed).
+    // Persist last_10 + soccer ties in external_ids (no schema change needed).
     const externalIds = { ...(team.external_ids || {}) };
     if (standings.last10Wins != null && standings.last10Losses != null) {
       externalIds.last_10_wins = standings.last10Wins;
       externalIds.last_10_losses = standings.last10Losses;
+    }
+    if (standings.ties != null) {
+      externalIds.ties = standings.ties;
     }
 
     const { error } = await supabase
@@ -317,6 +339,7 @@ export async function updateStandings(): Promise<{ updated: number; errors: stri
           ...(standings.last10Wins != null && standings.last10Losses != null
             ? { last_10_wins: standings.last10Wins, last_10_losses: standings.last10Losses }
             : {}),
+          ...(standings.ties != null ? { ties: standings.ties } : {}),
         },
         standings_updated_at: new Date().toISOString(),
       };

@@ -102,6 +102,10 @@ interface TeamStandings {
   streak: string | null;
   last_10_wins?: number | null;
   last_10_losses?: number | null;
+  // Soccer leagues only — counted toward total games played so the
+  // sample-size guard sees a 10-game team correctly even when records
+  // include draws (e.g. Timbers 3-1-6 should count as 10 games, not 9).
+  ties?: number | null;
 }
 
 function last10Pct(t: TeamStandings | null | undefined): number | null {
@@ -123,11 +127,12 @@ function calcGameQuality(
   const homePct = Number(homeTeam.win_pct) || 0;
   const awayPct = awayTeam ? (Number(awayTeam.win_pct) || 0) : 0.5;
 
-  // Sample-size guard: when both teams have played fewer than 10 games,
+  // Sample-size guard: when either team has played fewer than 10 games,
   // win_pct is meaningless noise (one game swings it 100%). Skip the
   // standings-based math and let big-game/opening-day boosts carry the score.
-  const homeGames = (homeTeam.wins || 0) + (homeTeam.losses || 0);
-  const awayGames = awayTeam ? (awayTeam.wins || 0) + (awayTeam.losses || 0) : 10;
+  // Ties counted for soccer (MLS/NWSL) so a 3-1-6 team is correctly 10 games.
+  const homeGames = (homeTeam.wins || 0) + (homeTeam.losses || 0) + (homeTeam.ties || 0);
+  const awayGames = awayTeam ? (awayTeam.wins || 0) + (awayTeam.losses || 0) + (awayTeam.ties || 0) : 10;
   const smallSample = homeGames < 10 || awayGames < 10;
 
   if (!smallSample) {
@@ -243,18 +248,21 @@ async function rescoreGame(supabase: ReturnType<typeof createServiceClient>, gam
   }
 
   const lowestPrice = pricing?.lowest_price || null;
-  // Pull last_10 out of external_ids JSONB so calcGameQuality can use it
-  const homeExt = (team?.external_ids as { last_10_wins?: number; last_10_losses?: number } | null) || null;
-  const awayExt = (awayTeamData?.external_ids as { last_10_wins?: number; last_10_losses?: number } | null) || null;
+  // Pull last_10 + ties out of external_ids JSONB
+  type ExtIds = { last_10_wins?: number; last_10_losses?: number; ties?: number };
+  const homeExt = (team?.external_ids as ExtIds | null) || null;
+  const awayExt = (awayTeamData?.external_ids as ExtIds | null) || null;
   const homeTeamData = team ? {
     wins: team.wins, losses: team.losses, win_pct: team.win_pct, streak: team.streak,
     last_10_wins: homeExt?.last_10_wins ?? null,
     last_10_losses: homeExt?.last_10_losses ?? null,
+    ties: homeExt?.ties ?? null,
   } : null;
   const awayTeamForScoring = awayTeamData ? {
     wins: awayTeamData.wins, losses: awayTeamData.losses, win_pct: awayTeamData.win_pct, streak: awayTeamData.streak,
     last_10_wins: awayExt?.last_10_wins ?? null,
     last_10_losses: awayExt?.last_10_losses ?? null,
+    ties: awayExt?.ties ?? null,
   } : null;
 
   const price = calcPriceScore(game.league, lowestPrice, playoffRound);
