@@ -582,9 +582,12 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
                 <p className="text-xs" style={{ color: '#86868b' }}>No live pricing yet — check back soon.</p>
               </div>
             )}
-            <div className="px-4 pb-3 -mt-1">
+            <div className="px-4 pb-3 -mt-1 space-y-1">
               <p className="text-[10px] leading-snug" style={{ color: '#aeaeb2' }}>
                 ALL-IN means the price shown is what you pay; otherwise expect fees at checkout.
+              </p>
+              <p className="text-[10px] leading-snug" style={{ color: '#aeaeb2' }}>
+                More sources (StubHub, Vivid Seats, Gametime) coming soon.
               </p>
             </div>
           </div>
