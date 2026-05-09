@@ -7,6 +7,7 @@ import { calculateDealScore } from '../scoring/deal-score';
 import { getWeatherForGame } from './weather';
 import { detectBigGame } from './big-game-detector';
 import { LEAGUE_AVG_PRICES, GAMES_PER_CITY, getPriceBaseline } from '../constants';
+import { getVenueLogistics as getVenueLogisticsServer } from '../venues';
 import type { Game, PricingSnapshot, Promotion } from '@/types/database';
 
 /**
@@ -228,6 +229,19 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
     homeStreak: homeTeam?.streak ?? null,
     homeLast10: homeLast10 ? `${homeLast10.wins}-${homeLast10.losses}` : null,
     awayLast10: awayLast10 ? `${awayLast10.wins}-${awayLast10.losses}` : null,
+    // Venue logistics — only passed when the venue is in our seeded lookup;
+    // Claude is instructed to mention only when notable (expensive parking
+    // with a clear transit win), not on every game.
+    parkingPrice: (() => {
+      const v = getVenueLogisticsServer(game.venue);
+      return v?.parking?.free ? 0 : (v?.parking?.typical ?? null);
+    })(),
+    transitNotes: (() => {
+      const v = getVenueLogisticsServer(game.venue);
+      return (v?.transit?.available && (v.transit.rating === 'excellent' || v.transit.rating === 'good'))
+        ? v.transit.notes
+        : null;
+    })(),
     // Big game fields
     bigGameLabel: bigGame.bigGameLabel,
     isElimination: isEliminationForPrompt,

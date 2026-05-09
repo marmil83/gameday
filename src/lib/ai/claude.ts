@@ -114,6 +114,10 @@ export async function enrichGame(context: {
   // Recent form (last 10 games) — useful for verdict copy when standings sample is small
   homeLast10?: string | null;   // e.g. "7-3"
   awayLast10?: string | null;
+  // Venue logistics — only used when notable (expensive parking + transit
+  // alternative). Keeps Claude from mentioning it on every game.
+  parkingPrice?: number | null;
+  transitNotes?: string | null;
   // Big game context — injected by detectBigGame
   bigGameLabel?: string | null;
   isElimination?: boolean;
@@ -183,6 +187,7 @@ Game Details:
 - ${context.homeTeam} record: ${context.homeRecord ?? 'unknown'}${context.homeStreak && !context.isPlayoffs ? ` (${context.homeStreak})` : ''}${context.homeLast10 && !context.isPlayoffs ? `, last 10: ${context.homeLast10}` : ''}
 - ${context.awayTeam} record: ${context.awayRecord ?? 'unknown'}${context.awayLast10 && !context.isPlayoffs ? `, last 10: ${context.awayLast10}` : ''}
 ${context.isPlayoffs ? '- NOTE: Streak data reflects end of regular season — do NOT mention win/loss streaks for playoff games.' : ''}
+${context.parkingPrice != null ? `- Parking ~$${context.parkingPrice}${context.transitNotes ? ` (transit alternative: ${context.transitNotes})` : ''}` : ''}
 ${bigGameSection}${playoffLanguageRule}
 
 Promotions:
@@ -215,6 +220,7 @@ IMPORTANT RULES:
 - If price is unknown, say so — don't guess
 - Each field is 1-2 sentences max — tight writing, no padding
 - NO DOLLAR AMOUNTS in verdict, why_worth_it, expectation_summary, seat_expectation, promo_clarity, or price_insight. Live prices change throughout the day and are displayed by the UI directly; embedding "$172" or "at $204" into copy guarantees it'll go stale and contradict what users see. Always use relative language ("premium", "great value", "above typical", "below average") instead.
+- Parking & transit info is shown by the UI in its own row — only mention it in copy when it's an unusually notable factor (e.g. SoFi's brutal parking, a venue where transit lets you skip a $40 lot). Never on every game; never restate the dollar amount.
 - ${verdictGuidance}
 
 Return ONLY valid JSON. No other text.`,

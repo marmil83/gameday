@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { GameCard as GameCardType, PricingSnapshot } from '@/types/database';
 import { PRICING_LABELS } from '@/lib/constants';
+import { getVenueLogistics } from '@/lib/venues';
 
 interface StaticSource {
   name: string;
@@ -288,6 +289,7 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
   const isGreatDeal = priceScore >= 8 && lowestPrice != null;
   const savings = getSavings(score, lowestPrice);
   const extraPromoCount = (promotions?.length || 0) - 1;
+  const venue = getVenueLogistics(game.venue);
 
   const dbSourceNames = new Set(all_pricing.map(s => s.source_name));
 
@@ -464,6 +466,38 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
           </div>
         )}
       </div>
+
+      {/* Parking + Transit — display-only, helps with "real cost of going" */}
+      {venue && (
+        <div className="px-6 pb-3 flex items-center gap-3 flex-wrap text-xs">
+          {/* Parking */}
+          <div className="flex items-center gap-1.5">
+            <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} style={{ color: '#86868b' }}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 17V7h4a3 3 0 010 6h-4M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z" />
+            </svg>
+            {venue.parking.free ? (
+              <span className="font-medium" style={{ color: '#1f8a3d' }}>Free parking</span>
+            ) : (
+              <span style={{ color: '#1d1d1f' }}>
+                Parking <span className="text-[#86868b]">~${venue.parking.typical}</span>
+              </span>
+            )}
+          </div>
+
+          {/* Transit — shown when accessible AND the rating is meaningful */}
+          {venue.transit.available && (venue.transit.rating === 'excellent' || venue.transit.rating === 'good') && (
+            <>
+              <span style={{ color: '#d2d2d7' }}>·</span>
+              <div className="flex items-center gap-1.5">
+                <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} style={{ color: '#0071e3' }}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                </svg>
+                <span style={{ color: '#0071e3' }}>{venue.transit.notes}</span>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Promo */}
       {topPromo && (
