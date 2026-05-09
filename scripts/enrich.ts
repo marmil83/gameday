@@ -308,7 +308,11 @@ Generate the following as a JSON object:
 9. "vibe_tags": Array of 1-3 from: "family-friendly", "high-energy", "cheap-night", "date-night", "chill", "promo-driven"
 10. "promo_clarity": Practical promo guidance, or null if no promos.
 
-IMPORTANT: Team records and streaks are provided above — use ONLY those values. Do NOT draw on any external or training knowledge about team performance or recent results. If price is unknown, say so. Return ONLY valid JSON.`
+IMPORTANT:
+- Team records and streaks are provided above — use ONLY those values. Do NOT draw on any external or training knowledge about team performance or recent results.
+- If price is unknown, say so.
+- NO DOLLAR AMOUNTS in any free-text field (verdict, why_worth_it, expectation_summary, seat_expectation, price_insight, promo_clarity). The UI displays live prices that refresh on their own cadence; embedding "$172" into copy guarantees it'll go stale within hours. Use relative language: "premium pricing", "great value", "below typical", "a steal for a playoff game", etc.
+Return ONLY valid JSON.`
     }],
   });
 

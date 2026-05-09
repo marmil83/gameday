@@ -200,7 +200,7 @@ Generate the following as a JSON object:
 
 5. "effort_level": One of: "easy", "moderate", "high_effort"
 
-6. "price_insight": One sentence with a genuine take on the price — is it a steal, fair, or a stretch? For big games, note that prices tend to climb closer to tip-off/first pitch.
+6. "price_insight": One sentence with a genuine take on the price level — is it a steal, fair, or a stretch? For big games, note that prices tend to climb closer to tip-off/first pitch. CRITICAL: Do NOT include the specific dollar amount (e.g. "$232", "at $150") — the UI displays the live price prominently and it refreshes on its own cadence; baking a number into the copy will go stale within hours and contradict what the user sees. Use relative language: "premium pricing", "well below typical", "fair value for a playoff game", "a steal given the matchup", etc.
 
 7. "seat_expectation": What the entry price likely gets you in plain English (e.g., "upper deck with a full view of the action", "lower bowl if you're lucky").
 
@@ -214,6 +214,7 @@ IMPORTANT RULES:
 - Team records and streaks are provided above — use ONLY those values. Do NOT draw on any external or training knowledge about team performance.
 - If price is unknown, say so — don't guess
 - Each field is 1-2 sentences max — tight writing, no padding
+- NO DOLLAR AMOUNTS in verdict, why_worth_it, expectation_summary, seat_expectation, promo_clarity, or price_insight. Live prices change throughout the day and are displayed by the UI directly; embedding "$172" or "at $204" into copy guarantees it'll go stale and contradict what users see. Always use relative language ("premium", "great value", "above typical", "below average") instead.
 - ${verdictGuidance}
 
 Return ONLY valid JSON. No other text.`,
