@@ -84,7 +84,7 @@ VALUES
   ('Portland Timbers', 'Timbers', 'POR', 'MLS', 'major',
     (SELECT id FROM cities WHERE name = 'Portland'),
     'Providence Park', 'outdoor',
-    'https://www.timbers.com/tickets/promotions',
+    'https://www.timbers.com/news/portland-timbers-announce-2026-theme-nights-schedule',
     'portland-timbers'),
   ('Portland Thorns FC', 'Thorns', 'POR', 'NWSL', 'major',
     (SELECT id FROM cities WHERE name = 'Portland'),
