@@ -23,6 +23,44 @@ const SOURCE_DISPLAY: Record<string, { label: string; favicon: string; isAllin?:
   },
 };
 
+// Partner deep-links — shown beneath the live-pricing rows in a clearly
+// secondary treatment. They're search-page links (no live price), but
+// surfacing them lets visitors cross-shop manually until we have
+// affiliate API access for live data on each.
+interface PartnerLink {
+  name: string;
+  favicon: string;
+  getUrl: (homeTeam: string) => string;
+}
+
+const PARTNER_LINKS: PartnerLink[] = [
+  {
+    name: 'StubHub',
+    favicon: 'https://www.stubhub.com/favicon.ico',
+    getUrl: (home) => `https://www.stubhub.com/${home.toLowerCase().replace(/\s+/g, '-')}-tickets/`,
+  },
+  {
+    name: 'Vivid Seats',
+    favicon: 'https://www.vividseats.com/favicon.ico',
+    getUrl: (home) => `https://www.vividseats.com/search?searchTerm=${encodeURIComponent(home)}`,
+  },
+  {
+    name: 'Gametime',
+    favicon: 'https://gametime.co/favicon.ico',
+    getUrl: (home) => `https://gametime.co/events?q=${encodeURIComponent(home)}`,
+  },
+  {
+    name: 'SeatGeek',
+    favicon: 'https://seatgeek.com/favicon.ico',
+    getUrl: (home) => `https://seatgeek.com/${home.toLowerCase().replace(/\s+/g, '-')}-tickets`,
+  },
+  {
+    name: 'Ticketmaster',
+    favicon: 'https://www.ticketmaster.com/favicon.ico',
+    getUrl: (home) => `https://www.ticketmaster.com/${home.toLowerCase().replace(/\s+/g, '-')}-tickets/`,
+  },
+];
+
 /** Relative time + freshness color from a captured_at ISO timestamp. */
 function freshness(capturedAt: string | null | undefined): { label: string; color: string } {
   if (!capturedAt) return { label: 'unknown', color: '#aeaeb2' };
@@ -557,13 +595,14 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
 
         {showTickets && (
           <div className="mt-3 rounded-2xl overflow-hidden" style={{ background: '#F2F2F7' }}>
-            <div className="px-4 pt-3 pb-1 flex items-center justify-between">
+            {/* Live-priced sources */}
+            <div className="px-4 pt-3 pb-1">
               <p className="text-[10px] font-medium uppercase tracking-wider" style={{ color: '#aeaeb2' }}>
-                Compare prices · live data
+                Live prices
               </p>
             </div>
             {ticketRows.length > 0 ? (
-              <div className="px-3 pb-3 divide-y" style={{ borderColor: 'rgba(0,0,0,0.05)' }}>
+              <div className="px-3 pb-1 divide-y" style={{ borderColor: 'rgba(0,0,0,0.05)' }}>
                 {ticketRows.map(row => (
                   <TicketSourceRow
                     key={row.key}
@@ -578,16 +617,47 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
                 ))}
               </div>
             ) : (
-              <div className="px-4 py-5 text-center">
+              <div className="px-4 py-3">
                 <p className="text-xs" style={{ color: '#86868b' }}>No live pricing yet — check back soon.</p>
               </div>
             )}
-            <div className="px-4 pb-3 -mt-1 space-y-1">
-              <p className="text-[10px] leading-snug" style={{ color: '#aeaeb2' }}>
-                ALL-IN means the price shown is what you pay; otherwise expect fees at checkout.
+
+            {/* Partner search links — secondary treatment, no fake prices */}
+            <div className="px-4 pt-3 pb-1 border-t" style={{ borderColor: 'rgba(0,0,0,0.05)' }}>
+              <p className="text-[10px] font-medium uppercase tracking-wider" style={{ color: '#aeaeb2' }}>
+                Also check
               </p>
+            </div>
+            <div className="px-3 pb-2">
+              <div className="flex flex-wrap gap-1.5 px-1 py-1">
+                {PARTNER_LINKS
+                  .filter(p => !ticketRows.some(r => r.name === p.name))
+                  .map(p => (
+                    <a
+                      key={p.name}
+                      href={p.getUrl(game.home_team_name)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full transition-colors"
+                      style={{ background: '#ffffff', border: '1px solid rgba(0,0,0,0.06)' }}
+                    >
+                      <img
+                        src={p.favicon}
+                        alt={p.name}
+                        className="w-3.5 h-3.5 rounded object-contain shrink-0"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                      <span className="text-xs" style={{ color: '#1d1d1f' }}>{p.name}</span>
+                      <svg className="w-2.5 h-2.5" style={{ color: '#aeaeb2' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                      </svg>
+                    </a>
+                  ))}
+              </div>
+            </div>
+            <div className="px-4 pb-3 space-y-1">
               <p className="text-[10px] leading-snug" style={{ color: '#aeaeb2' }}>
-                More sources (StubHub, Vivid Seats, Gametime) coming soon.
+                ALL-IN means the price shown is what you pay; otherwise expect fees at checkout. &ldquo;Also check&rdquo; opens partner search pages — live pricing for these is coming soon.
               </p>
             </div>
           </div>
