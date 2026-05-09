@@ -5,74 +5,55 @@ import type { GameCard as GameCardType, PricingSnapshot } from '@/types/database
 import { PRICING_LABELS } from '@/lib/constants';
 import { getVenueLogistics } from '@/lib/venues';
 
-interface StaticSource {
-  name: string;
-  favicon: string;
-  label?: string;
-  getUrl: (homeTeam: string, awayTeam: string) => string;
-}
-
-const STATIC_TICKET_SOURCES: StaticSource[] = [
-  {
-    name: 'StubHub',
-    favicon: 'https://www.stubhub.com/favicon.ico',
-    getUrl: (home) =>
-      `https://www.stubhub.com/${home.toLowerCase().replace(/\s+/g, '-')}-tickets/`,
-  },
-  {
-    name: 'Vivid Seats',
-    favicon: 'https://www.vividseats.com/favicon.ico',
-    getUrl: (home) =>
-      `https://www.vividseats.com/search?searchTerm=${encodeURIComponent(home)}`,
-  },
-  {
-    name: 'Gametime',
-    favicon: 'https://gametime.co/favicon.ico',
-    getUrl: (home) =>
-      `https://gametime.co/events?q=${encodeURIComponent(home)}`,
-  },
-  {
-    name: 'Ticketmaster',
-    favicon: 'https://www.ticketmaster.com/favicon.ico',
-    label: 'Official seller',
-    getUrl: (home) =>
-      `https://www.ticketmaster.com/${home.toLowerCase().replace(/\s+/g, '-')}-tickets/`,
-  },
-  {
-    name: 'SeatGeek',
-    favicon: 'https://seatgeek.com/favicon.ico',
-    getUrl: (home) =>
-      `https://seatgeek.com/${home.toLowerCase().replace(/\s+/g, '-')}-tickets`,
-  },
-];
-
-const SOURCE_DISPLAY: Record<string, { label: string; favicon: string; isAllin?: boolean }> = {
+// Display registry for ticket sources we actively pull live prices from.
+// Sources without live data + an affiliate program don't appear in the
+// comparison panel — mixing them with real prices destroys trust.
+// Add a new source here once its affiliate API/scraper is wired up.
+const SOURCE_DISPLAY: Record<string, { label: string; favicon: string; isAllin?: boolean; feeNote: string }> = {
   tickpick: {
     label: 'TickPick',
     favicon: 'https://www.tickpick.com/favicon.ico',
     isAllin: true,
+    feeNote: "Price is what you pay — no fees added at checkout",
   },
   seatgeek: {
     label: 'SeatGeek',
     favicon: 'https://seatgeek.com/favicon.ico',
+    feeNote: "Base price — fees added at checkout",
   },
 };
+
+/** Relative time + freshness color from a captured_at ISO timestamp. */
+function freshness(capturedAt: string | null | undefined): { label: string; color: string } {
+  if (!capturedAt) return { label: 'unknown', color: '#aeaeb2' };
+  const ageMs = Date.now() - new Date(capturedAt).getTime();
+  const mins = Math.floor(ageMs / 60_000);
+  if (mins < 60) return { label: `${Math.max(1, mins)}m ago`, color: '#1f8a3d' };
+  const hours = Math.floor(mins / 60);
+  if (hours < 12) return { label: `${hours}h ago`, color: hours <= 4 ? '#1f8a3d' : '#86868b' };
+  const days = Math.floor(hours / 24);
+  if (days < 1) return { label: `${hours}h ago`, color: '#bf6900' };
+  return { label: `${days}d ago`, color: '#bf6900' };
+}
 
 function TicketSourceRow({
   favicon,
   name,
   price,
-  badge,
   url,
   isAllin,
+  capturedAt,
+  isCheapest,
 }: {
   favicon: string;
   name: string;
-  price?: number | null;
-  badge?: string;
+  price: number;
   url: string;
   isAllin?: boolean;
+  capturedAt: string | null;
+  isCheapest: boolean;
 }) {
+  const fresh = freshness(capturedAt);
   return (
     <a
       href={url}
@@ -89,24 +70,29 @@ function TicketSourceRow({
       />
       <div className="flex items-center gap-2 flex-1 min-w-0">
         <span className="text-sm font-medium" style={{ color: '#1d1d1f' }}>{name}</span>
-        {badge && (
-          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full" style={{ background: '#F2F2F7', color: '#86868b' }}>
-            {badge}
+        {isAllin && (
+          <span
+            className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+            style={{ background: 'rgba(31,138,61,0.12)', color: '#1f8a3d' }}
+            title="Price shown is what you pay — no fees added"
+          >
+            ALL-IN
           </span>
         )}
-        {isAllin && (
-          <span className="text-[10px] font-medium" style={{ color: '#34c759' }}>all-in</span>
+        {isCheapest && (
+          <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#1f8a3d' }}>
+            cheapest
+          </span>
         )}
       </div>
-      <div className="flex items-center gap-1 shrink-0">
-        {price != null ? (
+      <div className="flex flex-col items-end shrink-0 gap-0.5">
+        <div className="flex items-center gap-1">
           <span className="text-sm font-semibold" style={{ color: '#1d1d1f' }}>from ${price}</span>
-        ) : (
-          <span className="text-sm font-medium" style={{ color: '#0071e3' }}>Visit site</span>
-        )}
-        <svg className="w-3.5 h-3.5 ml-0.5" style={{ color: '#aeaeb2' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
-        </svg>
+          <svg className="w-3.5 h-3.5 ml-0.5" style={{ color: '#aeaeb2' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+          </svg>
+        </div>
+        <span className="text-[10px]" style={{ color: fresh.color }}>{fresh.label}</span>
       </div>
     </a>
   );
@@ -291,13 +277,17 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
   const extraPromoCount = (promotions?.length || 0) - 1;
   const venue = getVenueLogistics(game.venue);
 
-  const dbSourceNames = new Set(all_pricing.map(s => s.source_name));
-
-  const pricedRows = all_pricing
-    .filter(s => s.lowest_price != null)
+  // Only show sources we have a live price + affiliate URL for. Static
+  // fallback links (no price, no commission) destroyed trust by mixing
+  // "real numbers" with "Visit site" placeholders. As we add affiliate
+  // partnerships (StubHub, Vivid Seats, Gametime), wire each scraper to
+  // write a pricing_snapshots row with source_name + affiliate_url and
+  // they'll automatically appear in this list.
+  const ticketRows = all_pricing
+    .filter(s => s.lowest_price != null && SOURCE_DISPLAY[s.source_name])
     .sort((a, b) => (a.lowest_price ?? 999) - (b.lowest_price ?? 999))
-    .map(s => {
-      const meta = SOURCE_DISPLAY[s.source_name] ?? { label: s.source_name, favicon: '', isAllin: false };
+    .map((s, i) => {
+      const meta = SOURCE_DISPLAY[s.source_name];
       return {
         key: s.source_name,
         favicon: meta.favicon,
@@ -305,38 +295,10 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
         price: Number(s.lowest_price),
         url: s.affiliate_url || game.affiliate_url || '#',
         isAllin: meta.isAllin,
-        badge: undefined as string | undefined,
+        capturedAt: s.captured_at ?? null,
+        isCheapest: i === 0,
       };
     });
-
-  const noPriceDbRows = all_pricing
-    .filter(s => s.lowest_price == null && s.affiliate_url)
-    .map(s => {
-      const meta = SOURCE_DISPLAY[s.source_name] ?? { label: s.source_name, favicon: '' };
-      return {
-        key: s.source_name,
-        favicon: meta.favicon,
-        name: meta.label,
-        price: null as number | null,
-        url: s.affiliate_url!,
-        isAllin: false,
-        badge: undefined as string | undefined,
-      };
-    });
-
-  const staticRows = STATIC_TICKET_SOURCES
-    .filter(src => !dbSourceNames.has(src.name.toLowerCase().replace(/\s+/g, '')))
-    .map(src => ({
-      key: src.name,
-      favicon: src.favicon,
-      name: src.name,
-      price: null as number | null,
-      url: src.getUrl(game.home_team_name, game.away_team_name),
-      isAllin: false,
-      badge: src.label,
-    }));
-
-  const allTicketRows = [...pricedRows, ...noPriceDbRows, ...staticRows];
 
   return (
     <div
@@ -595,23 +557,35 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
 
         {showTickets && (
           <div className="mt-3 rounded-2xl overflow-hidden" style={{ background: '#F2F2F7' }}>
-            <div className="px-4 pt-3 pb-1">
+            <div className="px-4 pt-3 pb-1 flex items-center justify-between">
               <p className="text-[10px] font-medium uppercase tracking-wider" style={{ color: '#aeaeb2' }}>
-                Compare prices
+                Compare prices · live data
               </p>
             </div>
-            <div className="px-3 pb-3 divide-y" style={{ borderColor: 'rgba(0,0,0,0.05)' }}>
-              {allTicketRows.map(row => (
-                <TicketSourceRow
-                  key={row.key}
-                  favicon={row.favicon}
-                  name={row.name}
-                  price={row.price}
-                  badge={row.badge}
-                  url={row.url}
-                  isAllin={row.isAllin}
-                />
-              ))}
+            {ticketRows.length > 0 ? (
+              <div className="px-3 pb-3 divide-y" style={{ borderColor: 'rgba(0,0,0,0.05)' }}>
+                {ticketRows.map(row => (
+                  <TicketSourceRow
+                    key={row.key}
+                    favicon={row.favicon}
+                    name={row.name}
+                    price={row.price}
+                    url={row.url}
+                    isAllin={row.isAllin}
+                    capturedAt={row.capturedAt}
+                    isCheapest={row.isCheapest}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="px-4 py-5 text-center">
+                <p className="text-xs" style={{ color: '#86868b' }}>No live pricing yet — check back soon.</p>
+              </div>
+            )}
+            <div className="px-4 pb-3 -mt-1">
+              <p className="text-[10px] leading-snug" style={{ color: '#aeaeb2' }}>
+                ALL-IN means the price shown is what you pay; otherwise expect fees at checkout.
+              </p>
             </div>
           </div>
         )}
