@@ -131,25 +131,41 @@ async function scrapeTeamPrices(teamName: string, league: string): Promise<Price
 async function savePricing(teamId: string, prices: PriceResult[]): Promise<number> {
   let saved = 0;
 
+  // TickPick lists events in the team's LOCAL date. Matching by raw UTC
+  // window collides on doubleheader-style schedules — e.g. Dodgers Sat
+  // 6pm PT (May 10 UTC) and Sun 1pm PT (May 10 UTC) both fall in the
+  // same UTC day, so a window-based match would resolve both TickPick
+  // entries to the same DB row. We match on local date instead.
+  const { data: teamRow } = await supabase
+    .from('teams')
+    .select('city_id, cities!inner(timezone)')
+    .eq('id', teamId)
+    .single();
+  const tz = ((teamRow as unknown as { cities?: { timezone?: string } })?.cities?.timezone) || 'America/Los_Angeles';
+  const localDateOf = (utcIso: string) => new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date(utcIso));
+
   for (const price of prices) {
-    // Widen window to cover timezone offsets (local date → UTC can shift by up to +14h)
-    const dayStart = `${price.eventDate}T00:00:00.000Z`;
-    const nextDay = new Date(price.eventDate + 'T00:00:00Z');
-    nextDay.setDate(nextDay.getDate() + 1);
-    const dayEnd = `${nextDay.toISOString().split('T')[0]}T12:00:00.000Z`;
+    // Pull a generous ±36h window of candidate games, then filter to those
+    // whose LOCAL date matches the TickPick eventDate exactly. Handles all
+    // timezone offsets without losing precision.
+    const targetMs = new Date(`${price.eventDate}T12:00:00Z`).getTime();
+    const windowStart = new Date(targetMs - 36 * 3_600_000).toISOString();
+    const windowEnd = new Date(targetMs + 36 * 3_600_000).toISOString();
 
-    // Find matching home game
-    const { data: games } = await supabase
+    const { data: candidates } = await supabase
       .from('games')
-      .select('id')
+      .select('id, start_time')
       .eq('home_team_id', teamId)
-      .gte('start_time', dayStart)
-      .lte('start_time', dayEnd)
-      .limit(1);
+      .gte('start_time', windowStart)
+      .lte('start_time', windowEnd)
+      .order('start_time');
 
-    if (!games || games.length === 0) continue;
+    const matched = (candidates || []).find(g => localDateOf(g.start_time) === price.eventDate);
+    if (!matched) continue;
 
-    const gameId = games[0].id;
+    const gameId = matched.id;
 
     // Delete old snapshots for this game/source and insert fresh
     await supabase
