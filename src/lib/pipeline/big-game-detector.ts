@@ -410,17 +410,21 @@ function buildLabel(ctx: {
 // ─────────────────────────────────────────────
 
 /** MLB Opening Day is typically late March; NBA/NHL season openers in Oct. */
+// Coarse per-league date window — used only to gate the home-opener check
+// in enrich.ts (so we don't query the DB on every random Tuesday in July).
+// The actual "is this the home opener?" decision is made in enrich.ts by
+// looking up whether any earlier home game exists for the team this season.
 function detectOpeningDay(league: string, gameDate: Date): boolean {
   const month = gameDate.getMonth() + 1; // 1-based
   const day = gameDate.getDate();
   switch (league) {
-    case 'MLB': return month === 3 && day >= 25 || month === 4 && day <= 5;
-    case 'NBA': return month === 10 && day <= 28;
-    case 'NHL': return month === 10 && day <= 20;
-    case 'NFL': return month === 9 && day <= 15;
-    case 'MLS': return month === 2 || (month === 3 && day <= 10);
-    case 'WNBA': return month === 5 && day <= 20;        // typical opens mid-May
-    case 'NWSL': return month === 3 && day >= 10 || month === 4 && day <= 5;
+    case 'MLB': return (month === 3 && day >= 20) || (month === 4 && day <= 15);
+    case 'NBA': return month === 10 && day <= 31;
+    case 'NHL': return month === 10 && day <= 25;
+    case 'NFL': return month === 9 && day <= 20;
+    case 'MLS': return month === 2 || (month === 3 && day <= 15);
+    case 'WNBA': return month === 5 && day <= 25;        // league-wide opens mid-May; teams' home openers staggered
+    case 'NWSL': return (month === 3 && day >= 1) || (month === 4 && day <= 10);
     default: return false;
   }
 }

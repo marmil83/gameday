@@ -272,6 +272,7 @@ IMPORTANT RULES:
 - Each field is 1-2 sentences max — tight writing, no padding
 - NO DOLLAR AMOUNTS in verdict, why_worth_it, expectation_summary, seat_expectation, promo_clarity, or price_insight. Live prices change throughout the day and are displayed by the UI directly; embedding "$172" or "at $204" into copy guarantees it'll go stale and contradict what users see. Always use relative language ("premium", "great value", "above typical", "below average") instead.
 - Parking & transit info is shown by the UI in its own row — only mention it in copy when it's an unusually notable factor (e.g. SoFi's brutal parking, a venue where transit lets you skip a $40 lot). Never on every game; never restate the dollar amount.
+- ABSOLUTE BAN on opener-language unless the game context above explicitly says it's the home opener / opening day: do NOT write "season opener", "opening night", "home opener", "season tipoff", "fresh season tipoff", "season starts here", "first home game", or any variant. A team having a 0-0 or low-game-count record does NOT mean it's an opener — multiple games happen at the start of every season. The verdict / why_worth_it text MUST avoid this language for any non-opener game; readers see the same opener language across multiple games and lose trust immediately.
 - ${verdictGuidance}
 
 Return ONLY valid JSON. No other text.`,
@@ -284,7 +285,66 @@ Return ONLY valid JSON. No other text.`,
   try {
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('No JSON found');
-    return JSON.parse(jsonMatch[0]) as GameEnrichment;
+    const parsed = JSON.parse(jsonMatch[0]) as GameEnrichment;
+
+    // Two-layer defense for opener-language leaks. Claude leans on
+    // "season opener" / "opening night" wording whenever it sees a
+    // low-game-count record, regardless of prompt rules.
+    //
+    // Layer 1: regenerate the JSON via a second Claude call with very
+    //   explicit anti-opener instructions.
+    // Layer 2: if the regen call fails OR its result STILL has the
+    //   leak language, hard-scrub the offending phrases from the text.
+    //   Imperfect grammar but guarantees no false opener claims.
+    if (!context.isOpeningDay) {
+      const openerLeak = /\b(opening day|opening night|home opener|season opener|tip(s)? off (the |their )?(new )?season|season tip(s)? off|tipoff of the (new )?season|season debut|season-opening|season starts (here|with|tonight)|first home game|fresh start of|new season tips off|season opener energy)\b/i;
+      const fields: Array<keyof GameEnrichment> = ['why_worth_it', 'verdict', 'expectation_summary', 'price_insight', 'seat_expectation', 'promo_clarity'];
+      const hasLeak = (obj: GameEnrichment) => fields.some(f => {
+        const v = obj[f];
+        return typeof v === 'string' && openerLeak.test(v);
+      });
+
+      if (hasLeak(parsed)) {
+        // Layer 1: regenerate
+        let regenerated: GameEnrichment | null = null;
+        try {
+          const fixResp = await callClaudeWithRetry({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 1500,
+            messages: [{
+              role: 'user',
+              content: `Rewrite the following game enrichment JSON. The game is NOT a home opener — the team has already played earlier home games this season. Remove ALL opener-language including: "opening day", "opening night", "home opener", "season opener", "tips off the season", "season tipoff", "season debut", "season-opening", "season starts here", "first home game", "fresh start of season", "new season tips off", "season opener energy". Keep all other content (records, rivalry, promo references, atmosphere) intact. Return ONLY the corrected JSON, same shape.\n\nOriginal:\n${JSON.stringify(parsed)}\n\nReturn ONLY the corrected JSON.`
+            }],
+          });
+          const fixText = fixResp.content[0].type === 'text' ? fixResp.content[0].text : '';
+          const fixMatch = fixText.match(/\{[\s\S]*\}/);
+          if (fixMatch) regenerated = JSON.parse(fixMatch[0]) as GameEnrichment;
+        } catch { /* fall through to layer 2 */ }
+
+        // Layer 2: hard-scrub if regen failed or still has leak
+        const target = regenerated && !hasLeak(regenerated) ? regenerated : (regenerated || parsed);
+        if (hasLeak(target)) {
+          const scrubField = (s: string | null | undefined): string | null => {
+            if (typeof s !== 'string') return s ?? null;
+            return s
+              .replace(openerLeak, '')
+              .replace(/\s+,/g, ',')
+              .replace(/\s{2,}/g, ' ')
+              .replace(/^\s*[—–\-,]\s*/, '')
+              .replace(/\s*[—–\-]\s*\.\s*$/, '.')
+              .trim();
+          };
+          for (const f of fields) {
+            if (typeof target[f] === 'string') {
+              (target as Record<keyof GameEnrichment, string | string[] | null>)[f] = scrubField(target[f] as string);
+            }
+          }
+        }
+        return target;
+      }
+    }
+
+    return parsed;
   } catch {
     console.error('Failed to parse enrichment response:', text);
     // Return safe defaults — never fabricate

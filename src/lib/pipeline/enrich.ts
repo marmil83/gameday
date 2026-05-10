@@ -177,6 +177,30 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
   const isEliminationForPrompt = bigGame.isElimination || bigGame.isFinals || priorSaysElim;
   const playoffRoundForPrompt = bigGame.playoffRound ?? priorRound ?? (isPlayoffsForPrompt ? 'first-round' : null);
 
+  // Real "home opener" detection — only the team's literal first home game
+  // of the season counts, not every game in the first few weeks. The date
+  // window in detectOpeningDay() gates this check; if the date is in the
+  // window AND no earlier home game exists for this team, it's the opener.
+  // Different teams have home openers on different days, so date-window-only
+  // detection over-flagged (e.g. WNBA Sparks May 17 was getting "opening
+  // day" because it fell in the May 1-20 window even though the team's
+  // actual home opener was May 16).
+  let isHomeOpener = false;
+  if (bigGame.isOpeningDay) {
+    // Look back ~6 months for any earlier home game of this team.
+    const sixMonthsBack = new Date(new Date(game.start_time).getTime() - 180 * 24 * 3600_000).toISOString();
+    const { data: earlierHomeGames } = await supabase
+      .from('games')
+      .select('id')
+      .eq('home_team_id', game.home_team_id)
+      .eq('is_home_game', true)
+      .gte('start_time', sixMonthsBack)
+      .lt('start_time', game.start_time)
+      .in('status', ['scheduled', 'completed'])
+      .limit(1);
+    isHomeOpener = !earlierHomeGames || earlierHomeGames.length === 0;
+  }
+
   // Apply big game boosts on top of standings-based team quality
   const boostedTeamQuality = teamQuality !== undefined
     ? Math.min(10, teamQuality + bigGame.gameQualityBoost)
@@ -249,7 +273,7 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
     isRivalry: bigGame.isRivalry,
     rivalryName: bigGame.rivalryName,
     seriesRecord: bigGame.seriesRecord,
-    isOpeningDay: bigGame.isOpeningDay,
+    isOpeningDay: isHomeOpener,
     isPlayoffs: isPlayoffsForPrompt,
   });
 
@@ -294,7 +318,7 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
   if (bigGame.isFinals) bigGameFlags.push('finals');
   if (bigGame.seriesGameNumber === 7) bigGameFlags.push('game-7');
   if (bigGame.isRivalry) bigGameFlags.push('rivalry');
-  if (bigGame.isOpeningDay) bigGameFlags.push('opening-day');
+  if (isHomeOpener) bigGameFlags.push('opening-day');
   // Store the round slug directly (e.g. 'conference-semis', 'conference-finals') so rescore.ts
   // can derive the right price baseline without an extra DB query.
   if (effectivePlayoffRound) bigGameFlags.push(effectivePlayoffRound);
@@ -343,7 +367,7 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
   // window-based check disagrees. Stops Claude from over-applying it to
   // every early-season game.
   const claudeFiltered = (enrichment.context_flags || []).filter(f => {
-    if (f === 'opening-day' && !bigGame.isOpeningDay) return false;
+    if (f === 'opening-day' && !isHomeOpener) return false;
     return true;
   });
   const mergedContextFlags = [...new Set([...claudeFiltered, ...bigGameFlags])];
