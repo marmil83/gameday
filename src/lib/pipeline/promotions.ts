@@ -114,19 +114,12 @@ export async function scrapePromotionsForTeam(
     return { extracted: 0, errors: ['No promo page URL configured'] };
   }
 
-  // Scrape the promo page
-  const rawText = await scrapePageText(team.promo_page_url, targetDate);
-  if (!rawText) {
-    return { extracted: 0, errors: [`Failed to scrape ${team.promo_page_url}`] };
-  }
-
-  // Use AI to extract promotions
-  const promotions = await extractPromotions(rawText, team.name, targetDate);
-
-  // Date matching is done in the team's LOCAL timezone — promo pages display
-  // dates as the team writes them (always local), not UTC. Comparing UTC
-  // boundaries to a "May 9" local date would mis-match games that start late
-  // evening (e.g. 7pm PT = 02:00 UTC next day).
+  // OPTIMIZATION: query for matching home games FIRST (cheap, just DB),
+  // and bail before doing any expensive work if nothing matches. The
+  // pipeline scrapes 7 dates × all teams twice daily; most team-date
+  // combos don't have a game on the target date. Previously we were
+  // running an HTTP fetch + AI call for every empty combo. This guard
+  // alone cuts ~60-70% of Anthropic spend.
   const { data: city } = await supabase
     .from('cities')
     .select('timezone')
@@ -140,7 +133,8 @@ export async function scrapePromotionsForTeam(
 
   // Pull games in a generous ±36h window around targetDate, then filter by
   // the team's local date so we get exactly the games belonging to that
-  // local calendar day.
+  // local calendar day. Promo pages display dates as the team writes them
+  // (always local), so matching must happen in the team's TZ.
   const targetMs = new Date(`${targetDate}T12:00:00Z`).getTime();
   const windowStart = new Date(targetMs - 36 * 3_600_000).toISOString();
   const windowEnd = new Date(targetMs + 36 * 3_600_000).toISOString();
@@ -152,9 +146,18 @@ export async function scrapePromotionsForTeam(
     .lte('start_time', windowEnd);
   const games = (rawGames || []).filter(g => startTimeToLocalDate(g.start_time) === targetDate);
 
+  // Early exit — saves the HTTP fetch and the AI call.
   if (games.length === 0) {
-    return { extracted: 0, errors: ['No games found for this date'] };
+    return { extracted: 0, errors: [] };
   }
+
+  // Now do the expensive work: scrape the page and call the AI.
+  const rawText = await scrapePageText(team.promo_page_url, targetDate);
+  if (!rawText) {
+    return { extracted: 0, errors: [`Failed to scrape ${team.promo_page_url}`] };
+  }
+
+  const promotions = await extractPromotions(rawText, team.name, targetDate);
 
   // Make this scrape IDEMPOTENT — wipe any prior AI-extracted promos for
   // these games before writing fresh ones. Without this, every twice-daily

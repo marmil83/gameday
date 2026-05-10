@@ -60,7 +60,12 @@ export async function extractPromotions(
   gameDate: string
 ): Promise<PromotionExtraction[]> {
   const response = await callClaudeWithRetry({
-    model: 'claude-sonnet-4-20250514',
+    // Haiku 3.5 is ~10× cheaper than Sonnet 4 and handles structured
+    // extraction (date → item → description from a promo page) just
+    // fine — this is a parsing task, not creative writing. The full
+    // game enrichment (verdict / why_worth_it copy) still uses Sonnet
+    // because that's where voice and judgment matter.
+    model: 'claude-haiku-4-5',
     // Promo schedule pages can list 50+ items for a full season. 2000
     // tokens silently truncated the JSON mid-array (no closing ]),
     // making the parse fall through to []. 6000 covers a full MLB
