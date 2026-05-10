@@ -98,7 +98,12 @@ export async function runPipelineForCity(cityId: string): Promise<PipelineResult
   const promoResult = { total_extracted: totalPromoExtracted, errors: promoErrors };
   allErrors.push(...promoResult.errors);
 
-  // Step 3: Enrich games (AI + scoring)
+  // Step 3: Enrich games (AI + scoring).
+  // CRITICAL ordering: this MUST run after Step 2 (promo scrape) so the
+  // AI-written verdict / why_worth_it / promo_clarity reflect the
+  // freshly-attached promos. Decoupling these (e.g. running promo scrape
+  // standalone) leaves the verdict text referencing whatever promo was
+  // attached at the time of the last enrichment — usually wrong by a day.
   console.log(`[Pipeline] Step 3: Enriching games for city ${cityId}`);
   const enrichResult = await enrichGamesForCity(cityId);
   allErrors.push(...enrichResult.errors);
