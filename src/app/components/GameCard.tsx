@@ -322,6 +322,42 @@ function getPromoDetail(promo: PromoLike, promoClarity?: string | null): string 
   return null;
 }
 
+// Drop low-signal promo rows and collapse exact duplicates so the UI
+// shows real things going on, not noise. AHL/MiLB promo schedules often
+// duplicate "family promo day" / "food & bev deal" entries with no
+// item — keep the most specific row, drop the bare ones.
+function dedupePromos(promos: PromoLike[]): PromoLike[] {
+  // Stable rank — most distinctive types first
+  const TYPE_RANK: Record<string, number> = {
+    giveaway: 0, fireworks: 1, theme_night: 2, special_ticket: 3,
+    family_promo: 4, food_bev_promo: 5,
+  };
+  const seen = new Set<string>();
+  const out: PromoLike[] = [];
+  // Sort first so the kept row is the highest-signal one when we collapse
+  const sorted = [...promos].sort((a, b) => {
+    const ra = TYPE_RANK[a.promo_type ?? ''] ?? 99;
+    const rb = TYPE_RANK[b.promo_type ?? ''] ?? 99;
+    if (ra !== rb) return ra - rb;
+    // Within type: prefer rows with an explicit item
+    return (b.promo_item ? 1 : 0) - (a.promo_item ? 1 : 0);
+  });
+  for (const p of sorted) {
+    const item = (p.promo_item ?? '').trim().toLowerCase();
+    const desc = (p.promo_description ?? '').trim().toLowerCase();
+    // Drop bare type-only rows (no item, no description) — pure noise
+    if (!item && !desc) continue;
+    // Dedupe key: type + item, OR type + first-30-chars-of-description when item is empty
+    const key = item
+      ? `${p.promo_type}|${item}`
+      : `${p.promo_type}|~${desc.slice(0, 30)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(p);
+  }
+  return out;
+}
+
 // ─── Price comparison helpers ──────────────────────────────────────────────
 
 function getSavings(score: GameCardType['score'], lowestPrice: number | null): { pct: number; avg: number } | null {
@@ -360,7 +396,9 @@ function getCalloutBanner(
 export default function GameCard({ data, timezone }: { data: GameCardType; timezone?: string }) {
   const { game, pricing, all_pricing = [], promotions, score, tags, insights, home_team_logo, away_team_logo } = data;
   const dealScore = Number(score?.deal_score) || 0;
-  const topPromo = promotions?.[0];
+  const dedupedPromos = dedupePromos(promotions || []);
+  const topPromo = dedupedPromos[0];
+  const additionalPromos = dedupedPromos.slice(1);
   const lowestPrice = pricing ? Number(pricing.lowest_price || pricing.displayed_price) : null;
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [showTickets, setShowTickets] = useState(false);
@@ -369,7 +407,6 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
   const priceScore = Number(score?.price_score) || 0;
   const isGreatDeal = priceScore >= 8 && lowestPrice != null;
   const savings = getSavings(score, lowestPrice);
-  const extraPromoCount = (promotions?.length || 0) - 1;
   const venue = getVenueLogistics(game.venue);
 
   // Only show sources we have a live price + affiliate URL for. Static
@@ -566,23 +603,26 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
             <PromoIcon type={topPromo.promo_type} />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#bf6900' }}>
-                {getPromoTitle(topPromo)}
-              </p>
-              {extraPromoCount > 0 && (
-                <span
-                  className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
-                  style={{ background: 'rgba(191,105,0,0.12)', color: '#bf6900' }}
-                >
-                  +{extraPromoCount} more
-                </span>
-              )}
-            </div>
+            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#bf6900' }}>
+              {getPromoTitle(topPromo)}
+            </p>
             {getPromoDetail(topPromo, insights?.promo_clarity) && (
               <p className="text-xs mt-1 leading-snug" style={{ color: '#8a5500' }}>
                 {getPromoDetail(topPromo, insights?.promo_clarity)}
               </p>
+            )}
+            {/* Additional promos — listed inline rather than hidden behind a "+N more" chip
+                that goes nowhere. Shown as compact bullets so even a 5-promo Griffins night
+                stays readable. */}
+            {additionalPromos.length > 0 && (
+              <ul className="mt-2 pt-2 space-y-1 border-t" style={{ borderColor: 'rgba(191,105,0,0.18)' }}>
+                {additionalPromos.map((p, i) => (
+                  <li key={i} className="text-xs leading-snug flex items-baseline gap-1.5" style={{ color: '#8a5500' }}>
+                    <span aria-hidden="true" className="shrink-0" style={{ color: '#bf6900' }}>•</span>
+                    <span>{getPromoTitle(p)}</span>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         </div>
