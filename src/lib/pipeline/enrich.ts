@@ -419,32 +419,25 @@ export async function getTopGamesForCity(
 
   const targetDate = date || new Date().toLocaleDateString('en-CA', { timeZone: tz });
 
-  // Convert local date boundaries to UTC using the city's timezone
-  // Create a date string at midnight local time, then get its UTC equivalent
-  const localMidnight = new Date(`${targetDate}T00:00:00`);
-  const localEnd = new Date(`${targetDate}T23:59:59.999`);
+  // Pull a generous ±36h UTC window around the target date, then filter
+  // results to those whose LOCAL date in the city's timezone exactly
+  // matches targetDate. This is the same pattern we use for the TickPick
+  // scraper and promo matcher — it's the only way to get correct date
+  // grouping that's robust to runtime timezone, DST, and games that fall
+  // exactly on a midnight boundary in the target TZ.
+  //
+  // The previous approach computed UTC boundaries via a string-parse-then-
+  // re-offset dance that accumulated a ~1ms drift. A game at exactly
+  // midnight in the target TZ (common for ESPN's placeholder TBD-time
+  // games — e.g. Pistons playoff games) ended up just past dayEnd of the
+  // PREVIOUS day, getting wrongly grouped under the wrong calendar day.
+  const targetMs = new Date(`${targetDate}T12:00:00Z`).getTime();
+  const dayStart = new Date(targetMs - 36 * 3600_000).toISOString();
+  const dayEnd = new Date(targetMs + 36 * 3600_000).toISOString();
 
-  // Get UTC offset by formatting in the target timezone
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-    hour12: false,
+  const localFmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
   });
-
-  // Use a simpler approach: construct a Date that represents midnight in the target timezone
-  // by using toLocaleString to find the offset
-  const nowInTz = new Date().toLocaleString('en-US', { timeZone: tz });
-  const nowUtc = new Date();
-  const nowLocal = new Date(nowInTz);
-  const offsetMs = nowUtc.getTime() - nowLocal.getTime();
-
-  // dayStart/dayEnd in UTC = local midnight/end + offset
-  const dayStartUtc = new Date(localMidnight.getTime() + offsetMs);
-  const dayEndUtc = new Date(localEnd.getTime() + offsetMs);
-
-  const dayStart = dayStartUtc.toISOString();
-  const dayEnd = dayEndUtc.toISOString();
 
   const { data: games, error } = await supabase
     .from('games')
@@ -468,8 +461,13 @@ export async function getTopGamesForCity(
 
   if (error || !games) return [];
 
+  // Strict local-date filter: drop any game whose local date in the
+  // city's timezone doesn't exactly match targetDate. Catches games at
+  // the midnight boundary that the wide UTC window over-fetched.
+  const dateMatched = games.filter(g => localFmt.format(new Date(g.start_time)) === targetDate);
+
   // Sort by deal score (featured games first, then by score)
-  const sorted = games.sort((a, b) => {
+  const sorted = dateMatched.sort((a, b) => {
     if (a.is_featured && !b.is_featured) return -1;
     if (!a.is_featured && b.is_featured) return 1;
     const scoreA = (Array.isArray(a.scores) ? a.scores[0]?.deal_score : a.scores?.deal_score) || 0;
