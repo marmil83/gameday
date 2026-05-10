@@ -382,14 +382,22 @@ function getCalloutBanner(
   const contextFlags = (insights?.context_flags as string[]) || [];
   const tagNames = tags?.map(t => t.tag_name) || [];
 
-  if (contextFlags.includes('game-7'))        return { text: 'Game 7', accent: '#ff3b30' };
-  if (contextFlags.includes('elimination'))   return { text: 'Elimination Game', accent: '#ff3b30' };
-  if (contextFlags.includes('finals'))        return { text: 'Finals', accent: '#ff3b30' };
+  // Priority order: severity > distinctiveness > value/info. Only one
+  // banner shows at a time, so put the most "you should pay attention"
+  // contexts first. Bad weather lives at the bottom — it's the only
+  // negative signal so it never trumps a positive one (e.g. a Game 7
+  // in the rain still reads as "Game 7").
+  if (contextFlags.includes('game-7'))            return { text: 'Game 7', accent: '#ff3b30' };
+  if (contextFlags.includes('elimination'))       return { text: 'Elimination Game', accent: '#ff3b30' };
+  if (contextFlags.includes('series-finale'))     return { text: 'Series Finale', accent: '#ff3b30' };
+  if (contextFlags.includes('finals'))            return { text: 'Finals', accent: '#ff3b30' };
   if (contextFlags.includes('conference-finals')) return { text: 'Conference Finals', accent: '#ff9500' };
-  if (contextFlags.includes('playoff'))       return { text: 'Playoff Game', accent: '#ff9500' };
-  if (contextFlags.includes('rivalry'))       return { text: 'Rivalry Game', accent: '#af52de' };
-  if (contextFlags.includes('opening-day'))   return { text: 'Opening Day', accent: '#0071e3' };
+  if (contextFlags.includes('playoff'))           return { text: 'Playoff Game', accent: '#ff9500' };
+  if (contextFlags.includes('rivalry'))           return { text: 'Rivalry Game', accent: '#af52de' };
+  if (contextFlags.includes('doubleheader'))      return { text: 'Doubleheader', accent: '#5856d6' };
+  if (contextFlags.includes('opening-day'))       return { text: 'Opening Day', accent: '#0071e3' };
   if (priceScore >= 9 || tagNames.includes('cheap-night')) return { text: 'Value Game', accent: '#34c759' };
+  if (contextFlags.includes('bad-weather'))       return { text: 'Weather Concern', accent: '#bf6900' };
   return null;
 }
 

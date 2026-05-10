@@ -298,6 +298,46 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
   // Store the round slug directly (e.g. 'conference-semis', 'conference-finals') so rescore.ts
   // can derive the right price baseline without an extra DB query.
   if (effectivePlayoffRound) bigGameFlags.push(effectivePlayoffRound);
+
+  // Bad-weather warning — outdoor venue with poor forecast. weather_score
+  // is 0-10 (10 = perfect, 0 = severe). Threshold ≤3 catches heavy rain,
+  // extreme cold/heat, etc. — meaningful information for the visitor's
+  // decision (bring poncho? skip? swap dates?).
+  if (isOutdoor && weatherScore !== undefined && weatherScore <= 3) {
+    bigGameFlags.push('bad-weather');
+  }
+
+  // Doubleheader / back-to-back same-day — useful "did you know?" info.
+  // Common in MLB; rare elsewhere. Detected by counting other home games
+  // for this team on the same local calendar date in the city's timezone.
+  const localDateOfStart = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date(game.start_time));
+  const targetMs = new Date(`${localDateOfStart}T12:00:00Z`).getTime();
+  const { data: sameDayGames } = await supabase
+    .from('games')
+    .select('id, start_time')
+    .eq('home_team_id', game.home_team_id)
+    .neq('id', gameId)
+    .eq('is_home_game', true)
+    .gte('start_time', new Date(targetMs - 36 * 3600_000).toISOString())
+    .lte('start_time', new Date(targetMs + 36 * 3600_000).toISOString());
+  const localFmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+  const isDoubleheader = (sameDayGames || []).some(
+    g => localFmt.format(new Date(g.start_time)) === localDateOfStart,
+  );
+  if (isDoubleheader) bigGameFlags.push('doubleheader');
+
+  // Series finale — final game of a known-length series. ESPN sometimes
+  // gives series length in the seriesRecord (e.g. "Tied 3-3" → next game
+  // is the decider, "Trail 0-3" → potential elimination + finale).
+  // Game-7 already gets its own flag; this catches sweeps and 4-game
+  // first-round series enders.
+  if (bigGame.isElimination && bigGame.seriesGameNumber && bigGame.seriesGameNumber !== 7) {
+    bigGameFlags.push('series-finale');
+  }
   // Filter Claude's flags — opening-day is reliably detected from the game
   // date (see detectOpeningDay), so we drop Claude's claim when ESPN's
   // window-based check disagrees. Stops Claude from over-applying it to
