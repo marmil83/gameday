@@ -74,6 +74,11 @@ function freshness(capturedAt: string | null | undefined): { label: string; colo
   return { label: `${days}d ago`, color: '#bf6900' };
 }
 
+// Two-row layout (works at any width):
+//   [icon] TickPick                       from $29 →
+//          ALL-IN · CHEAPEST                 12m ago
+// Avoids the mobile bug where ALL-IN/CHEAPEST competed with the price
+// for horizontal space and wrapped into a misshapen pill.
 function TicketSourceRow({
   favicon,
   name,
@@ -97,42 +102,94 @@ function TicketSourceRow({
       href={url}
       target="_blank"
       rel="noopener noreferrer"
-      className="flex items-center gap-3 py-3 px-1 rounded-xl transition-colors group"
+      className="flex items-start gap-3 py-3 px-1 rounded-xl transition-colors group"
       style={{ WebkitTapHighlightColor: 'transparent' }}
     >
-      <img
-        src={favicon}
-        alt={name}
-        className="w-5 h-5 rounded object-contain shrink-0"
-        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-      />
-      <div className="flex items-center gap-2 flex-1 min-w-0">
+      <SourceFavicon src={favicon} name={name} className="mt-0.5" />
+      <div className="flex-1 min-w-0">
         <span className="text-sm font-medium" style={{ color: '#1d1d1f' }}>{name}</span>
-        {isAllin && (
-          <span
-            className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-            style={{ background: 'rgba(31,138,61,0.12)', color: '#1f8a3d' }}
-            title="Price shown is what you pay — no fees added"
-          >
-            ALL-IN
-          </span>
-        )}
-        {isCheapest && (
-          <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#1f8a3d' }}>
-            cheapest
-          </span>
+        {(isAllin || isCheapest) && (
+          <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+            {isAllin && (
+              <span
+                className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                style={{ background: 'rgba(31,138,61,0.12)', color: '#1f8a3d', whiteSpace: 'nowrap' }}
+                title="Price shown is what you pay — no fees added"
+              >
+                ALL-IN
+              </span>
+            )}
+            {isCheapest && (
+              <span
+                className="text-[10px] font-semibold uppercase tracking-wide"
+                style={{ color: '#1f8a3d', whiteSpace: 'nowrap' }}
+              >
+                cheapest
+              </span>
+            )}
+          </div>
         )}
       </div>
       <div className="flex flex-col items-end shrink-0 gap-0.5">
         <div className="flex items-center gap-1">
-          <span className="text-sm font-semibold" style={{ color: '#1d1d1f' }}>from ${price}</span>
+          <span className="text-sm font-semibold" style={{ color: '#1d1d1f', whiteSpace: 'nowrap' }}>from ${price}</span>
           <svg className="w-3.5 h-3.5 ml-0.5" style={{ color: '#aeaeb2' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
           </svg>
         </div>
-        <span className="text-[10px]" style={{ color: fresh.color }}>{fresh.label}</span>
+        <span className="text-[10px]" style={{ color: fresh.color, whiteSpace: 'nowrap' }}>{fresh.label}</span>
       </div>
     </a>
+  );
+}
+
+// Favicon with a graceful letter-chip fallback when the icon URL 404s
+// (Vivid Seats and a few others have flaky favicon URLs). Prevents the
+// pill from rendering with a hole in it.
+function SourceFavicon({ src, name, className = '' }: { src: string; name: string; className?: string }) {
+  const [errored, setErrored] = useState(false);
+  if (errored || !src) {
+    return (
+      <div
+        className={`w-5 h-5 rounded shrink-0 flex items-center justify-center text-[10px] font-bold ${className}`}
+        style={{ background: '#1d1d1f', color: '#fff' }}
+        aria-hidden="true"
+      >
+        {name.charAt(0)}
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt=""
+      className={`w-5 h-5 rounded object-contain shrink-0 ${className}`}
+      onError={() => setErrored(true)}
+    />
+  );
+}
+
+// Smaller variant for the partner pills (3.5×3.5 instead of 5×5).
+function PartnerPillFavicon({ src, name }: { src: string; name: string }) {
+  const [errored, setErrored] = useState(false);
+  if (errored || !src) {
+    return (
+      <div
+        className="w-3.5 h-3.5 rounded shrink-0 flex items-center justify-center text-[8px] font-bold"
+        style={{ background: '#1d1d1f', color: '#fff' }}
+        aria-hidden="true"
+      >
+        {name.charAt(0)}
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt=""
+      className="w-3.5 h-3.5 rounded object-contain shrink-0"
+      onError={() => setErrored(true)}
+    />
   );
 }
 
@@ -641,13 +698,8 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
                       className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full transition-colors"
                       style={{ background: '#ffffff', border: '1px solid rgba(0,0,0,0.06)' }}
                     >
-                      <img
-                        src={p.favicon}
-                        alt={p.name}
-                        className="w-3.5 h-3.5 rounded object-contain shrink-0"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                      />
-                      <span className="text-xs" style={{ color: '#1d1d1f' }}>{p.name}</span>
+                      <PartnerPillFavicon src={p.favicon} name={p.name} />
+                      <span className="text-xs" style={{ color: '#1d1d1f', whiteSpace: 'nowrap' }}>{p.name}</span>
                       <svg className="w-2.5 h-2.5" style={{ color: '#aeaeb2' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M14 5l7 7m0 0l-7 7m7-7H3" />
                       </svg>
