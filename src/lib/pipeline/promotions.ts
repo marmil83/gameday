@@ -117,6 +117,28 @@ export async function scrapePromotionsForTeam(
     return { extracted: 0, errors: ['No games found for this date'] };
   }
 
+  // Make this scrape IDEMPOTENT — wipe any prior AI-extracted promos for
+  // these games before writing fresh ones. Without this, every twice-daily
+  // scrape was appending duplicates AND stale data from buggy past runs
+  // (e.g. dates Claude attributed wrong) lingered forever. Admin-verified
+  // promos are preserved.
+  //
+  // NB: select-then-delete-by-id pattern. Combining `.in('game_id', [...])`
+  // with `.eq()` boolean filters in a single .delete() chain silently
+  // matched 0 rows in our Supabase build — likely a PostgREST quirk with
+  // multi-condition deletes. Selecting first sidesteps it.
+  const matchedGameIds = games.map(g => g.id);
+  const { data: stale } = await supabase
+    .from('promotions')
+    .select('id')
+    .in('game_id', matchedGameIds)
+    .eq('is_ai_extracted', true)
+    .eq('is_admin_verified', false);
+  for (const row of stale || []) {
+    const { error: delErr } = await supabase.from('promotions').delete().eq('id', row.id);
+    if (delErr) errors.push(`Failed to clear promo ${row.id}: ${delErr.message}`);
+  }
+
   let extracted = 0;
 
   for (const promo of promotions) {

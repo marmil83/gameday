@@ -34,14 +34,38 @@ interface GameEnrichment {
 /**
  * Extract structured promotions from raw scraped text
  */
+// Retry once after a 65s wait when Claude rate-limits us. The promo
+// scraper used to swallow these silently — every team after a 429 would
+// return 0 promos, which is how the Dodgers schedule was missing for so
+// long without anyone noticing.
+type MessageBody = Parameters<typeof anthropic.messages.create>[0];
+type MessageResp = Anthropic.Messages.Message;
+async function callClaudeWithRetry(body: MessageBody): Promise<MessageResp> {
+  try {
+    return (await anthropic.messages.create(body)) as MessageResp;
+  } catch (err) {
+    const status = (err as { status?: number })?.status;
+    if (status === 429) {
+      console.warn('[claude] 429 rate limit — waiting 65s and retrying once');
+      await new Promise(r => setTimeout(r, 65_000));
+      return (await anthropic.messages.create(body)) as MessageResp;
+    }
+    throw err;
+  }
+}
+
 export async function extractPromotions(
   rawText: string,
   teamName: string,
   gameDate: string
 ): Promise<PromotionExtraction[]> {
-  const response = await anthropic.messages.create({
+  const response = await callClaudeWithRetry({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 2000,
+    // Promo schedule pages can list 50+ items for a full season. 2000
+    // tokens silently truncated the JSON mid-array (no closing ]),
+    // making the parse fall through to []. 6000 covers a full MLB
+    // season comfortably.
+    max_tokens: 6000,
     messages: [
       {
         role: 'user',
@@ -61,7 +85,7 @@ Each promotion must have:
 - promo_type: one of "giveaway", "theme_night", "fireworks", "special_ticket", "family_promo", "food_bev_promo"
 - promo_item: the specific item exactly as named on the page (e.g., "T-shirt", "bobblehead", "rally towel", "acrylic mini court"). Null only if no item is mentioned (e.g., a theme night with no giveaway).
 - description: a clean one-sentence description that pulls ONLY from the text adjacent to this specific date. Do NOT mix in details from other dates.
-- date: YYYY-MM-DD. Required. Set to null ONLY if the page truly has no date for this promo (rare).
+- date: YYYY-MM-DD. Required. Promo pages often write dates without a year (e.g. "Sunday, May 10" or "May 10 vs. Braves"). When a year is missing, infer it from the Reference date provided above (use the same year). The combination of month + day + day-of-week is unambiguous within a season. Set to null ONLY if the page truly has no date at all for this promo (rare).
 - opponent: the opposing team if mentioned next to this entry, else null
 - special_ticket_required: boolean — true only if explicitly stated
 - eligibility_details: e.g., "first 10,000 fans" or "all fans in attendance", or null
@@ -81,15 +105,42 @@ Return ONLY valid JSON array. No other text.`,
 
   const text = response.content[0].type === 'text' ? response.content[0].text : '';
 
+  // First try strict parse — when the response contains a clean array.
   try {
-    // Extract JSON from response (handle markdown code blocks)
-    const jsonMatch = text.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) return [];
-    return JSON.parse(jsonMatch[0]) as PromotionExtraction[];
+    const m = text.match(/\[[\s\S]*\]/);
+    if (m) return JSON.parse(m[0]) as PromotionExtraction[];
   } catch {
-    console.error('Failed to parse promotion extraction response:', text);
-    return [];
+    // fall through to lenient recovery
   }
+
+  // Lenient recovery: extract every complete `{...}` object we can find.
+  // Handles cases where the JSON gets truncated mid-array because Claude
+  // hit the max_tokens ceiling — we lose the last partial item but still
+  // get every item before it. Critical because pages with 50+ promos can
+  // exceed even 6000 tokens and silently dropping ALL of them was the
+  // bug that made the entire Dodgers schedule disappear.
+  const recovered: PromotionExtraction[] = [];
+  let depth = 0;
+  let start = -1;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '{') {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === '}') {
+      depth--;
+      if (depth === 0 && start >= 0) {
+        try {
+          recovered.push(JSON.parse(text.slice(start, i + 1)) as PromotionExtraction);
+        } catch { /* skip malformed object */ }
+        start = -1;
+      }
+    }
+  }
+  if (recovered.length === 0) {
+    console.error('Failed to parse promotion extraction response (no complete objects found):', text.slice(0, 500));
+  }
+  return recovered;
 }
 
 /**
@@ -159,7 +210,7 @@ export async function enrichGame(context: {
     ? `\n\nCRITICAL LANGUAGE RULE: This IS the playoffs. Never write "playoff-caliber", "playoff-level", "playoff-like", "playoff-style", "playoff implications", "feels like a playoff game", or any similar hedge. Say "the playoffs", "a playoff game", "playoff [round name]", or name the specific stakes directly. Hedging on a real playoff game is the worst possible mistake — readers will know and lose trust.`
     : '';
 
-  const response = await anthropic.messages.create({
+  const response = await callClaudeWithRetry({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 1500,
     messages: [

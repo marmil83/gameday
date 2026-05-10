@@ -396,9 +396,11 @@ function getCalloutBanner(
 export default function GameCard({ data, timezone }: { data: GameCardType; timezone?: string }) {
   const { game, pricing, all_pricing = [], promotions, score, tags, insights, home_team_logo, away_team_logo } = data;
   const dealScore = Number(score?.deal_score) || 0;
+  // Pick the single most distinctive promo as the headline (e.g. giveaway
+  // beats food deal). Dropping the multi-promo list per design choice —
+  // visitors get the marquee item + practical detail, nothing else.
   const dedupedPromos = dedupePromos(promotions || []);
   const topPromo = dedupedPromos[0];
-  const additionalPromos = dedupedPromos.slice(1);
   const lowestPrice = pricing ? Number(pricing.lowest_price || pricing.displayed_price) : null;
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [showTickets, setShowTickets] = useState(false);
@@ -593,7 +595,10 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
         </div>
       )}
 
-      {/* Promo */}
+      {/* Promo — main giveaway headline + practical detail.
+          dedupePromos() picks the most distinctive single promo so the
+          headline reflects the marquee item (giveaway > theme_night > etc.)
+          rather than whatever happened to be returned first. */}
       {topPromo && (
         <div
           className="mx-6 mb-4 px-4 py-3 rounded-2xl flex items-start gap-3"
@@ -610,19 +615,6 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
               <p className="text-xs mt-1 leading-snug" style={{ color: '#8a5500' }}>
                 {getPromoDetail(topPromo, insights?.promo_clarity)}
               </p>
-            )}
-            {/* Additional promos — listed inline rather than hidden behind a "+N more" chip
-                that goes nowhere. Shown as compact bullets so even a 5-promo Griffins night
-                stays readable. */}
-            {additionalPromos.length > 0 && (
-              <ul className="mt-2 pt-2 space-y-1 border-t" style={{ borderColor: 'rgba(191,105,0,0.18)' }}>
-                {additionalPromos.map((p, i) => (
-                  <li key={i} className="text-xs leading-snug flex items-baseline gap-1.5" style={{ color: '#8a5500' }}>
-                    <span aria-hidden="true" className="shrink-0" style={{ color: '#bf6900' }}>•</span>
-                    <span>{getPromoTitle(p)}</span>
-                  </li>
-                ))}
-              </ul>
             )}
           </div>
         </div>
