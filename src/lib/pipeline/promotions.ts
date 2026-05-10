@@ -7,9 +7,11 @@ import { extractPromotions } from '../ai/claude';
 import type { Team } from '@/types/database';
 
 /**
- * Scrape text content from a URL
+ * Scrape text content from a URL, optionally focused around a target date
+ * so we don't waste Claude's output budget on past results that appear
+ * earlier on the page (e.g. AHL/MiLB sites render the full season).
  */
-async function scrapePageText(url: string): Promise<string | null> {
+async function scrapePageText(url: string, targetDate?: string): Promise<string | null> {
   try {
     const response = await fetch(url, {
       headers: {
@@ -41,17 +43,54 @@ async function scrapePageText(url: string): Promise<string | null> {
     });
 
     // Get main content text
-    const text = $('main, article, .content, .promotions, .promos, [class*="promo"], body')
+    const fullText = $('main, article, .content, .promotions, .promos, [class*="promo"], body')
       .first()
       .text()
       .replace(/\s+/g, ' ')
       .trim();
 
-    // Limit to reasonable length for AI processing.
-    // 20k chars covers a full-season promo schedule for most teams without
-    // blowing through Claude's context — was previously 8k which truncated
-    // mid-season and caused later games to lose their promos silently.
-    return text.slice(0, 20000);
+    // Date-aware slicing: if we know the target date, find where it (or a
+    // nearby date) appears in the text and grab a generous window around
+    // it. This is critical for sites like griffinshockey.com that render
+    // the entire ~160k-char season including past results — without
+    // focusing, Claude exhausts its output budget on October games before
+    // reaching the May playoff dates the caller actually asked about.
+    if (targetDate) {
+      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'];
+      const monthAbbrevs = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const [, monthStr, dayStr] = targetDate.match(/^(\d{4})-(\d{2})-(\d{2})$/) ?? [];
+      const month = parseInt(monthStr ?? '0', 10);
+      const day = parseInt(dayStr ?? '0', 10);
+      if (month >= 1 && month <= 12) {
+        // Try several formats teams use: "May 9", "May 09", "5/9", "5-9"
+        const monthName = monthNames[month - 1];
+        const monthAbbrev = monthAbbrevs[month - 1];
+        const candidates: RegExp[] = [
+          new RegExp(`\\b${monthName}\\s+${day}\\b`, 'i'),
+          new RegExp(`\\b${monthName}\\s+0?${day}\\b`, 'i'),
+          new RegExp(`\\b${monthAbbrev}\\.?\\s+${day}\\b`, 'i'),
+          new RegExp(`\\b${month}/${day}\\b`),
+          new RegExp(`\\b${month}-${day}\\b`),
+        ];
+        let hitIdx = -1;
+        for (const re of candidates) {
+          const m = fullText.search(re);
+          if (m >= 0) { hitIdx = m; break; }
+        }
+        if (hitIdx >= 0) {
+          // Window: ~10k chars before, 30k after (most upcoming-game lists
+          // continue forward chronologically, so more after than before).
+          const start = Math.max(0, hitIdx - 10_000);
+          const end = Math.min(fullText.length, hitIdx + 30_000);
+          return fullText.slice(start, end);
+        }
+      }
+    }
+
+    // No target date or no match — fall back to a generous head slice.
+    return fullText.slice(0, 200000);
   } catch (error) {
     console.error(`Scrape error for ${url}:`, error);
     return null;
@@ -76,7 +115,7 @@ export async function scrapePromotionsForTeam(
   }
 
   // Scrape the promo page
-  const rawText = await scrapePageText(team.promo_page_url);
+  const rawText = await scrapePageText(team.promo_page_url, targetDate);
   if (!rawText) {
     return { extracted: 0, errors: [`Failed to scrape ${team.promo_page_url}`] };
   }

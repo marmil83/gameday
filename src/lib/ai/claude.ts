@@ -69,17 +69,17 @@ export async function extractPromotions(
     messages: [
       {
         role: 'user',
-        content: `You are a sports promotion data extractor. Given raw text from a team's official promotions page, extract every dated promotion as structured data. The caller will filter by date afterwards — your job is to faithfully report what's on the page, not to filter or guess.
+        content: `You are a sports promotion data extractor. Given raw text from a team's official promotions page, extract dated promotions for an upcoming game.
 
 Team: ${teamName}
-Reference date (for context only — do NOT bias your extraction toward this date): ${gameDate}
+Reference date: ${gameDate}
 
 Raw text from promotions page:
 ---
 ${rawText}
 ---
 
-Extract EVERY promotion that has a clearly stated date on this page. Return a JSON array.
+Extract every promotion on this page whose date is within ±14 days of the Reference date (i.e. within two weeks before or after). Skip every promotion outside that window — they're either historical or far in the future and waste output tokens. Return a JSON array.
 
 Each promotion must have:
 - promo_type: one of "giveaway", "theme_night", "fireworks", "special_ticket", "family_promo", "food_bev_promo"
