@@ -2,11 +2,13 @@ name: TickPick Pricing
 
 on:
   schedule:
-    # 4x daily, ~6h apart, to keep TickPick prices within ~6h of fresh
-    - cron: '0 4 * * *'   # 4 AM UTC  (12 AM EDT / 9 PM PDT prev day)
+    # 6x daily, every 4 hours, to keep TickPick prices within ~4h of fresh
+    - cron: '0 2 * * *'   # 2 AM UTC  (10 PM EDT / 7 PM PDT prev day)
+    - cron: '0 6 * * *'   # 6 AM UTC  (2 AM EDT  / 11 PM PDT prev day)
     - cron: '0 10 * * *'  # 10 AM UTC (6 AM EDT  / 3 AM PDT)
-    - cron: '0 16 * * *'  # 4 PM UTC  (12 PM EDT / 9 AM PDT)
-    - cron: '0 21 * * *'  # 9 PM UTC  (5 PM EDT  / 2 PM PDT)
+    - cron: '0 14 * * *'  # 2 PM UTC  (10 AM EDT / 7 AM PDT)
+    - cron: '0 18 * * *'  # 6 PM UTC  (2 PM EDT  / 11 AM PDT)
+    - cron: '0 22 * * *'  # 10 PM UTC (6 PM EDT  / 3 PM PDT)
   workflow_dispatch: # allow manual trigger from GitHub UI
 
 jobs:

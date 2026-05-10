@@ -1,6 +1,14 @@
 {
   "crons": [
     {
+      "path": "/api/pipeline/refresh-pricing",
+      "schedule": "30 1 * * *"
+    },
+    {
+      "path": "/api/pipeline/refresh-pricing",
+      "schedule": "30 5 * * *"
+    },
+    {
       "path": "/api/pipeline/rescore",
       "schedule": "0 9 * * *"
     },
@@ -10,7 +18,11 @@
     },
     {
       "path": "/api/pipeline/refresh-pricing",
-      "schedule": "0 15 * * *"
+      "schedule": "30 13 * * *"
+    },
+    {
+      "path": "/api/pipeline/refresh-pricing",
+      "schedule": "30 17 * * *"
     },
     {
       "path": "/api/pipeline/rescore",
@@ -19,10 +31,6 @@
     {
       "path": "/api/pipeline/run",
       "schedule": "30 21 * * *"
-    },
-    {
-      "path": "/api/pipeline/refresh-pricing",
-      "schedule": "0 3 * * *"
     }
   ]
 }
