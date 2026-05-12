@@ -4,7 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { runPipelineForCity, runFullPipeline } from '@/lib/pipeline/orchestrator';
-import { createServiceClient } from '@/lib/supabase/server';
+import { createServerSupabaseClient, createServiceClient } from '@/lib/supabase/server';
 
 export const maxDuration = 300; // 5 min timeout for cron
 
@@ -33,7 +33,11 @@ export async function POST(request: NextRequest) {
   const pipelineSecret = process.env.PIPELINE_SECRET;
 
   if (authHeader !== `Bearer ${pipelineSecret}`) {
-    const supabase = createServiceClient();
+    // Must use the cookie-reading server client here — createServiceClient()
+    // uses the service role key and won't see the admin's session cookie,
+    // so auth.getUser() always returned null and 401'd a logged-in admin
+    // clicking "Run Pipeline" from the dashboard.
+    const supabase = await createServerSupabaseClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
