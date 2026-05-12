@@ -51,7 +51,7 @@ export default function GameList() {
         <div className="max-w-lg mx-auto px-5 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-lg font-semibold tracking-tight" style={{ color: '#1d1d1f' }}>Foamfinger</h1>
+              <h1 className="text-lg font-semibold tracking-tight" style={{ color: '#1d1d1f' }}>WorthGoing</h1>
               <p className="text-xs mt-0.5" style={{ color: '#86868b' }}>Know Before You Go</p>
             </div>
             <CitySelector currentCity={city} onCityChange={setCity} />

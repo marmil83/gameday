@@ -1,4 +1,4 @@
--- Foamfinger MVP Database Schema
+-- WorthGoing MVP Database Schema
 -- Automation-first sports game recommendation engine
 
 -- ============================================================

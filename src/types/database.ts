@@ -1,4 +1,4 @@
-// Foamfinger Database Types
+// WorthGoing Database Types
 // These mirror the Supabase schema and are used throughout the application
 
 export type PricingTransparency = 'all_in_verified' | 'estimated_with_fees' | 'base_price_only';

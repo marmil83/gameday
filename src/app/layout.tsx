@@ -8,7 +8,7 @@ const geistSans = Geist({
 });
 
 export const metadata: Metadata = {
-  title: "Foamfinger — Games Worth Going To",
+  title: "WorthGoing — Games Worth Going To",
   description: "The easiest way to decide if a game is worth going to. Curated picks, real prices, honest recommendations.",
 };
 

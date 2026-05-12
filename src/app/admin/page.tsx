@@ -132,7 +132,7 @@ export default function AdminDashboard() {
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <h1 className="text-lg font-bold text-gray-900">Foamfinger Admin</h1>
+            <h1 className="text-lg font-bold text-gray-900">WorthGoing Admin</h1>
             <a href="/" className="text-xs text-blue-600 hover:underline">View public site</a>
           </div>
           <div className="flex items-center gap-3">

@@ -1,4 +1,4 @@
-// Foamfinger Constants
+// WorthGoing Constants
 
 export const VIBE_TAGS = [
   'family-friendly',

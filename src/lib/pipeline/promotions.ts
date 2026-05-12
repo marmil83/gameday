@@ -15,7 +15,7 @@ async function scrapePageText(url: string, targetDate?: string): Promise<string 
   try {
     const response = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; Foamfinger/1.0)',
+        'User-Agent': 'Mozilla/5.0 (compatible; WorthGoing/1.0)',
       },
     });
 

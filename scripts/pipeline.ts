@@ -33,7 +33,7 @@ function run(label: string, script: string) {
 
 async function main() {
   const startTime = Date.now();
-  console.log(`\nFoamfinger Pipeline — ${new Date().toLocaleString()}`);
+  console.log(`\nWorthGoing Pipeline — ${new Date().toLocaleString()}`);
   console.log(`Mode: ${withAI ? 'FULL (with AI — tokens will be used)' : 'SCORE-ONLY (no tokens)'}\n`);
 
   // Step 1: Fetch latest standings (free APIs)

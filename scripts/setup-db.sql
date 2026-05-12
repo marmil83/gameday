@@ -1,5 +1,5 @@
 -- ============================================================
--- Foamfinger Database Setup Script
+-- WorthGoing Database Setup Script
 -- Run this in Supabase SQL Editor (Dashboard > SQL Editor > New Query)
 -- Copy-paste this entire file and click "Run"
 -- ============================================================
