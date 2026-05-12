@@ -419,7 +419,23 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
     if (seriesUncertain && (f === 'elimination' || f === 'game-7' || f === 'series-finale')) return false;
     return true;
   });
-  const mergedContextFlags = [...new Set([...claudeFiltered, ...bigGameFlags])];
+  let mergedContextFlags = [...new Set([...claudeFiltered, ...bigGameFlags])];
+
+  // Defense-in-depth invariant: the banner FLAG must always match the
+  // verdict COPY. If Claude wrote conditional/hedged language about
+  // series state ("could be a swing game", "depending on tonight's
+  // result"), then no definitive series-state flag should remain on
+  // the card — regardless of what the upstream detection said. This
+  // catches edge cases where the seriesUncertain check might miss a
+  // matchup (e.g. ESPN's seriesGameNumber is null but Claude still
+  // hedged) and guarantees flag ↔ copy consistency on every card.
+  const conditionalCopy = /\b(could be|could become|depending on|if .{1,40} wins?|if .{1,40} loses?|stakes (could|may|depend)|may put|may become|potential closeout|swing game|pivotal swing|could shift|may not be|conditional)\b/i;
+  const aiText = `${enrichment.verdict || ''} ${enrichment.why_worth_it || ''} ${enrichment.expectation_summary || ''}`;
+  if (conditionalCopy.test(aiText)) {
+    mergedContextFlags = mergedContextFlags.filter(
+      f => f !== 'elimination' && f !== 'game-7' && f !== 'series-finale',
+    );
+  }
 
   // 5. Save score
   await supabase.from('scores').upsert({
