@@ -12,6 +12,17 @@ function formatLocalDate(d: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+// Today (and offset days) in a SPECIFIC timezone — required because the
+// schedule the user sees is whatever's happening in the city's local
+// frame, not their own. A user in Eastern looking at Portland should
+// have the "Today" pill match Portland's date, not Detroit's.
+function dateInTimezone(offset: number, timezone?: string): string {
+  const d = new Date();
+  d.setDate(d.getDate() + offset);
+  if (!timezone) return formatLocalDate(d);
+  return d.toLocaleDateString('en-CA', { timeZone: timezone });
+}
+
 // URL slug ↔ canonical city name. Dynamic (not a hardcoded list) so
 // any city we add to the DB works automatically — "Los Angeles" ⇄
 // "los-angeles", "New York" ⇄ "new-york", etc. The API still receives
@@ -83,7 +94,12 @@ export default function GameList() {
       const data = await res.json();
       setGames(data.games || []);
       setCityInfo(data.city || { name: city, state: '', timezone: 'America/New_York' });
-      if (!date) setDate(data.date || '');
+      // Intentionally NOT promoting data.date into local state. Doing so
+      // caused two bugs when crossing timezones: the API resolves "today"
+      // in the city's frame (e.g. Portland → Pacific), but the date pills
+      // were comparing against the user's browser-local today — so the
+      // Today pill could deselect even though we were showing today's
+      // games, and an extra refetch fired with the now-set date.
     } catch {
       setGames([]);
     } finally {
@@ -95,8 +111,10 @@ export default function GameList() {
     fetchGames();
   }, [fetchGames]);
 
-  const today = formatLocalDate(new Date());
-  const isToday = date === today || !date;
+  // "Today" is relative to the CITY being viewed, not the user's browser.
+  // Falls back to browser-local before cityInfo has loaded.
+  const today = dateInTimezone(0, cityInfo.timezone);
+  const isToday = !date || date === today;
 
   return (
     <div className="min-h-screen" style={{ background: '#F2F2F7' }}>
@@ -128,10 +146,12 @@ export default function GameList() {
         {/* Date pills */}
         <div className="flex gap-2 mt-5">
           {[0, 1, 2].map(offset => {
-            const d = new Date();
-            d.setDate(d.getDate() + offset);
-            const dStr = formatLocalDate(d);
-            const label = offset === 0 ? 'Today' : offset === 1 ? 'Tomorrow' : d.toLocaleDateString('en-US', { weekday: 'short' });
+            const dStr = dateInTimezone(offset, cityInfo.timezone);
+            const label = offset === 0
+              ? 'Today'
+              : offset === 1
+                ? 'Tomorrow'
+                : new Date(dStr + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short' });
             const active = date === dStr || (offset === 0 && !date);
 
             return (
