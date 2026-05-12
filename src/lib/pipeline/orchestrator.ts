@@ -5,9 +5,10 @@ import { createServiceClient } from '../supabase/server';
 import { ingestESPNEventsForCity, attachSeatGeekPricingForCity } from './espn-events';
 import { ingestEventsForCity } from './events';
 import { scrapePromotionsForCity } from './promotions';
-import { enrichGamesForCity } from './enrich';
+import { enrichGamesForCity, enrichSingleGame } from './enrich';
 import { updateStandings } from './standings';
 import { rescoreAllGames } from './rescore';
+import { markCompletedAndRefreshDependents } from './post-game';
 
 interface PipelineResult {
   run_id: string;
@@ -41,12 +42,15 @@ export async function runPipelineForCity(cityId: string): Promise<PipelineResult
 
   const runId = run?.id || 'unknown';
 
-  // Step 0a: Mark past scheduled games as completed (4-hour grace for in-progress games).
-  // Runs server-side on every pipeline invocation so the DB stays clean even if the
-  // local scheduled task didn't fire (Mac was off, etc.).
-  console.log(`[Pipeline] Step 0a: Marking past games completed`);
-  const cutoff = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
-  await supabase.from('games').update({ status: 'completed' }).eq('status', 'scheduled').lt('start_time', cutoff);
+  // Step 0a: Mark past scheduled games as completed (4-hour grace for in-progress
+  // games), AND immediately re-enrich any dependent upcoming games in the same
+  // series. This is what unsticks copy like "Cleveland faces elimination" the
+  // moment we know the prior game's outcome — without it, the dependent game's
+  // verdict stays stale until the next full pipeline run (up to ~12h).
+  console.log(`[Pipeline] Step 0a: Marking past games completed + refreshing dependents`);
+  const postGame = await markCompletedAndRefreshDependents(supabase, enrichSingleGame);
+  console.log(`[Pipeline] Marked ${postGame.marked_completed} game(s) completed, re-enriched ${postGame.dependents_refreshed} dependent game(s)`);
+  if (postGame.errors.length > 0) allErrors.push(...postGame.errors);
 
   // Step 0b: Update team standings (wins/losses/streak) so scoring is accurate.
   // Runs once per full pipeline invocation — all cities share the same teams table,
