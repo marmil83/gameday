@@ -624,8 +624,42 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
         </div>
       )}
 
-{/* Regret + verdict are consolidated into a single headline below the
-    promo block — no standalone row here. Keeps the card single-voiced. */}
+      {/* Why you'd regret missing this — sits below logistics, before the
+          promo block. Section is hidden entirely for ordinary games (no
+          manufactured urgency). HIGH renders as a bold red accent; MEDIUM
+          is softer amber. Sourced from the AI's regret_factor field,
+          encoded into context_flags as `regret-{intensity}:{reason}`. */}
+      {regret && (
+        <div
+          className="mx-6 mb-3 px-4 py-3 rounded-2xl flex items-start gap-3"
+          style={
+            regret.intensity === 'high'
+              ? { background: 'rgba(255,59,48,0.06)', borderLeft: '3px solid #ff3b30' }
+              : { background: '#FAFAF7', borderLeft: '3px solid #bf6900' }
+          }
+        >
+          <span
+            className="shrink-0 mt-0.5 text-base leading-none"
+            aria-hidden="true"
+          >
+            {regret.intensity === 'high' ? '❗' : '⭐'}
+          </span>
+          <div className="flex-1 min-w-0">
+            <p
+              className="text-[10px] font-bold uppercase tracking-wider"
+              style={{ color: regret.intensity === 'high' ? '#ff3b30' : '#bf6900' }}
+            >
+              {regret.intensity === 'high' ? "Why you'd regret missing this" : 'Heads up'}
+            </p>
+            <p
+              className="text-xs mt-1 leading-snug"
+              style={{ color: regret.intensity === 'high' ? '#1d1d1f' : '#3a3a3a' }}
+            >
+              {regret.reason}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Promo — main giveaway headline + practical detail.
           dedupePromos() picks the most distinctive single promo so the
@@ -652,31 +686,45 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
         </div>
       )}
 
-      {/* Single headline — Apple-style one-voice card. When regret_factor
-          is set, the regret reason IS the headline. Otherwise the verdict
-          is. HIGH-intensity regret gets a thin red accent line on the left
-          to subtly signal stakes without adding a separate row + label.
-          why_worth_it is intentionally dropped from the card surface to
-          avoid three-opinion-block clutter — it stays in the DB for any
-          future expand-detail view. */}
-      {(regret?.reason || insights?.verdict) && (
-        <div
-          className="px-6 pb-4"
-          style={
-            regret?.intensity === 'high'
-              ? { borderLeft: '3px solid #ff3b30', marginLeft: '0' }
-              : undefined
-          }
-        >
-          <p
-            className="text-sm font-semibold leading-snug"
-            style={{
-              color: '#1d1d1f',
-              paddingLeft: regret?.intensity === 'high' ? '0.75rem' : '0',
-            }}
-          >
-            {regret?.reason || insights?.verdict}
+      {/* Verdict */}
+      {insights?.verdict && (
+        <div className="px-6 pb-3">
+          <p className="text-sm font-semibold leading-snug" style={{ color: '#1d1d1f' }}>
+            {insights.verdict}
           </p>
+        </div>
+      )}
+
+      {/* Why worth it */}
+      {insights?.why_worth_it && (
+        <div className="px-6 pb-4">
+          <p className="text-sm leading-relaxed" style={{ color: '#86868b' }}>
+            {insights.why_worth_it}
+          </p>
+        </div>
+      )}
+
+      {/* Tags */}
+      {(tags?.length || insights?.effort_level) && (
+        <div className="px-6 pb-4 flex flex-wrap gap-2">
+          {tags?.map((tag) => (
+            <span
+              key={tag.tag_name}
+              className="px-3 py-1 text-xs font-medium rounded-full"
+              style={{ background: '#F2F2F7', color: '#86868b' }}
+            >
+              {tag.tag_name}
+            </span>
+          ))}
+          {insights?.effort_level && (
+            <span
+              className="px-3 py-1 text-xs font-medium rounded-full"
+              style={{ background: '#F2F2F7', color: '#86868b' }}
+            >
+              {insights.effort_level === 'easy' ? 'Easy outing' :
+               insights.effort_level === 'high_effort' ? 'Plan ahead' : 'Moderate effort'}
+            </span>
+          )}
         </div>
       )}
 
