@@ -12,12 +12,54 @@ function formatLocalDate(d: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+// Map URL-friendly slugs ↔ canonical city names. Slugs are what we put
+// in the address bar; the API still takes the canonical name. Keeping
+// the map small and explicit (rather than a generic slugify) means an
+// unrecognized ?city= silently falls back to the default instead of
+// 404'ing the API with garbage.
+const CITY_SLUGS: Record<string, string> = {
+  detroit: 'Detroit',
+  portland: 'Portland',
+};
+const CITY_TO_SLUG: Record<string, string> = Object.fromEntries(
+  Object.entries(CITY_SLUGS).map(([slug, name]) => [name, slug])
+);
+
+function readInitialCity(): string {
+  if (typeof window === 'undefined') return 'Detroit';
+  const slug = new URLSearchParams(window.location.search).get('city')?.toLowerCase();
+  return (slug && CITY_SLUGS[slug]) || 'Detroit';
+}
+
+function readInitialDate(): string {
+  if (typeof window === 'undefined') return '';
+  const d = new URLSearchParams(window.location.search).get('date') || '';
+  // Only accept YYYY-MM-DD; anything malformed falls back to "" (today).
+  return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : '';
+}
+
 export default function GameList() {
-  const [city, setCity] = useState('Detroit');
+  const [city, setCity] = useState(readInitialCity);
   const [games, setGames] = useState<GameCardType[]>([]);
   const [loading, setLoading] = useState(true);
-  const [date, setDate] = useState('');
+  const [date, setDate] = useState(readInitialDate);
   const [cityInfo, setCityInfo] = useState({ name: '', state: '', timezone: '' });
+
+  // Mirror city + date into the URL without reloading the page, so the
+  // current view is shareable. replaceState (not pushState) avoids
+  // polluting browser history on every date-pill click.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams();
+    const slug = CITY_TO_SLUG[city];
+    if (slug && slug !== 'detroit') params.set('city', slug); // default city stays clean
+    if (date) params.set('date', date);
+    const qs = params.toString();
+    const next = qs ? `?${qs}` : window.location.pathname;
+    if (window.location.search !== (qs ? `?${qs}` : '')) {
+      window.history.replaceState(null, '', next);
+    }
+  }, [city, date]);
 
   const fetchGames = useCallback(async () => {
     setLoading(true);
