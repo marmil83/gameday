@@ -177,6 +177,23 @@ function calculateGameQualityScore(inputs: ScoreInputs): { score: number; reason
     score += 1.5;
     factors.push('star players');
   }
+  // Big-game boosts that don't depend on standings. Without these,
+  // early-season games (e.g. WNBA opening week when every team is
+  // 0-0) stayed at the flat baseline of 5 even when the matchup was
+  // genuinely a marquee event. Standings-based signals (teamQuality,
+  // L10, marquee matchup) all silently no-op in that window, so
+  // these flags carry the score until records mean something.
+  if (inputs.isElimination) {
+    score += 2.5;
+    factors.push('elimination game');
+  } else if (inputs.isPlayoffs) {
+    score += 2;
+    factors.push('playoff game');
+  }
+  if (inputs.isOpeningDay) {
+    score += 1.5;
+    factors.push('home opener');
+  }
   if (inputs.teamQuality !== undefined) {
     // Adjust based on how good the teams are (0-10 scale input)
     score += (inputs.teamQuality - 5) * 0.3;
