@@ -201,6 +201,37 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
     isHomeOpener = !earlierHomeGames || earlierHomeGames.length === 0;
   }
 
+  // Series-state uncertainty check — for playoff games where ESPN gives us
+  // a seriesGameNumber ≥ 2, the actual series state (record, elimination
+  // status) depends on the OUTCOMES of earlier games in the series. If any
+  // earlier game in this matchup is still 'scheduled' (not played yet), we
+  // CANNOT assert elimination or specific record state.
+  //
+  // Example: Pistons-Cavaliers Game 5 on Wednesday is "bracket Game 5",
+  // but whether it's elimination depends on Monday's Game 4. If Monday is
+  // still scheduled when we enrich Wednesday, Claude must use conditional
+  // language ("could become a closeout if...") rather than claiming
+  // "Cleveland faces elimination" as fact.
+  //
+  // When the prior game completes and the next pipeline run re-enriches
+  // Wednesday, the uncertainty resolves and Claude can speak with
+  // confidence about the (now-known) series state.
+  let seriesUncertain = false;
+  if (isPlayoffsForPrompt && bigGame.seriesGameNumber && bigGame.seriesGameNumber >= 2 && game.away_team_name && game.away_team_name !== 'TBD') {
+    const twoWeeksBack = new Date(new Date(game.start_time).getTime() - 14 * 24 * 3600_000).toISOString();
+    // Find scheduled (not yet completed) games between these same two
+    // teams in the last 2 weeks — that's the unresolved earlier series game.
+    const { data: priorScheduled } = await supabase
+      .from('games')
+      .select('id, status, start_time')
+      .or(`and(home_team_name.eq.${game.home_team_name},away_team_name.eq.${game.away_team_name}),and(home_team_name.eq.${game.away_team_name},away_team_name.eq.${game.home_team_name})`)
+      .gte('start_time', twoWeeksBack)
+      .lt('start_time', game.start_time)
+      .eq('status', 'scheduled')
+      .limit(1);
+    seriesUncertain = !!(priorScheduled && priorScheduled.length > 0);
+  }
+
   // Apply big game boosts on top of standings-based team quality
   const boostedTeamQuality = teamQuality !== undefined
     ? Math.min(10, teamQuality + bigGame.gameQualityBoost)
@@ -266,13 +297,17 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
         ? v.transit.notes
         : null;
     })(),
-    // Big game fields
+    // Big game fields. When the series state is uncertain (earlier game
+    // hasn't been played yet), we suppress elimination/seriesRecord and
+    // signal uncertainty to Claude so it uses conditional language.
     bigGameLabel: bigGame.bigGameLabel,
-    isElimination: isEliminationForPrompt,
+    isElimination: seriesUncertain ? false : isEliminationForPrompt,
     isFinals: bigGame.isFinals,
     isRivalry: bigGame.isRivalry,
     rivalryName: bigGame.rivalryName,
-    seriesRecord: bigGame.seriesRecord,
+    seriesRecord: seriesUncertain ? null : bigGame.seriesRecord,
+    seriesGameNumber: bigGame.seriesGameNumber,
+    seriesUncertain,
     isOpeningDay: isHomeOpener,
     isPlayoffs: isPlayoffsForPrompt,
   });

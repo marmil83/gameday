@@ -181,6 +181,12 @@ export async function enrichGame(context: {
   isRivalry?: boolean;
   rivalryName?: string | null;
   seriesRecord?: string | null;
+  seriesGameNumber?: number | null;
+  // True when an earlier game in the series is still scheduled (not yet
+  // played). When true, Claude MUST use conditional language about series
+  // state — no claiming Game N status, elimination, or specific record
+  // as fact, because those depend on the unplayed game's outcome.
+  seriesUncertain?: boolean;
   isOpeningDay?: boolean;
   isPlayoffs?: boolean;
 }): Promise<GameEnrichment> {
@@ -199,16 +205,27 @@ export async function enrichGame(context: {
   if (context.isRivalry && context.rivalryName) bigGameLines.push(`- RIVALRY GAME: ${context.rivalryName} — historic matchup, crowd will be electric.`);
   if (context.seriesRecord) bigGameLines.push(`- Series status: ${context.seriesRecord}`);
   if (context.isOpeningDay) bigGameLines.push('- OPENING DAY: First game of the season — always special.');
+  // CRITICAL: surface series-state uncertainty when an earlier game hasn't
+  // been played. This tells Claude not to fabricate forward-looking series
+  // state (e.g. claiming "Cleveland faces elimination" on a Wednesday
+  // game when Monday's game is still scheduled).
+  if (context.seriesUncertain) {
+    bigGameLines.push(
+      `- SERIES STATE UNCERTAIN: This is bracket-position Game ${context.seriesGameNumber ?? '?'}, but an earlier game in this series HAS NOT been played yet. DO NOT claim specific series record, elimination, or closeout status — those depend on the unplayed game's outcome. Use conditional language ONLY: "could become a closeout if X wins tonight", "may put one team on the brink", "depending on tonight's result". NEVER write "X faces elimination" or "X is one win from advancing" as fact.`,
+    );
+  }
 
   const bigGameSection = bigGameLines.length > 0
     ? `\nGame Context (HIGH PRIORITY — reflect this in your copy):\n${bigGameLines.join('\n')}`
     : '';
 
-  const verdictGuidance = context.isElimination || context.isFinals
-    ? 'For this game: be emphatic. This is a historic, must-see event. Do not hedge.'
-    : context.isPlayoffs
-      ? 'For this game: lead with the playoff stakes. Be energetic.'
-      : 'The verdict should be genuinely helpful and opinionated.';
+  const verdictGuidance = context.seriesUncertain
+    ? `For this game: the series state depends on an unplayed earlier game, so frame stakes conditionally ("could be a pivotal swing game", "stakes depend on tonight's result"). Stay energetic about the playoff context overall, but do not assert specific series state or elimination as fact.`
+    : context.isElimination || context.isFinals
+      ? 'For this game: be emphatic. This is a historic, must-see event. Do not hedge.'
+      : context.isPlayoffs
+        ? 'For this game: lead with the playoff stakes. Be energetic.'
+        : 'The verdict should be genuinely helpful and opinionated.';
 
   // Hard ban on hedging language for actual playoff games
   const playoffLanguageRule = context.isPlayoffs
@@ -278,6 +295,7 @@ IMPORTANT RULES:
 - NO DOLLAR AMOUNTS in verdict, why_worth_it, expectation_summary, seat_expectation, promo_clarity, or price_insight. Live prices change throughout the day and are displayed by the UI directly; embedding "$172" or "at $204" into copy guarantees it'll go stale and contradict what users see. Always use relative language ("premium", "great value", "above typical", "below average") instead.
 - Parking & transit info is shown by the UI in its own row — only mention it in copy when it's an unusually notable factor (e.g. SoFi's brutal parking, a venue where transit lets you skip a $40 lot). Never on every game; never restate the dollar amount.
 - ABSOLUTE BAN on opener-language unless the game context above explicitly says it's the home opener / opening day: do NOT write "season opener", "opening night", "home opener", "season tipoff", "fresh season tipoff", "season starts here", "first home game", or any variant. A team having a 0-0 or low-game-count record does NOT mean it's an opener — multiple games happen at the start of every season. The verdict / why_worth_it text MUST avoid this language for any non-opener game; readers see the same opener language across multiple games and lose trust immediately.
+- ABSOLUTE BAN on assuming future series outcomes. If "SERIES STATE UNCERTAIN" appears in the Game Context above, you MUST NOT write definitive statements like "X faces elimination", "Y is one win from advancing", "this is Game N closeout", "with the series tied/led 2-1", or any specific series record. The earlier series game is still scheduled — saying any of this would be predicting the future as fact. Use ONLY conditional language: "could become a closeout if X wins tonight", "stakes depend on tonight's result", "a potential pivotal swing game". Refer to the game number cautiously ("the next game in the series") rather than locking in a specific Game N narrative.
 - ${verdictGuidance}
 
 Return ONLY valid JSON. No other text.`,
