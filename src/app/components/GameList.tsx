@@ -12,23 +12,27 @@ function formatLocalDate(d: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-// Map URL-friendly slugs ↔ canonical city names. Slugs are what we put
-// in the address bar; the API still takes the canonical name. Keeping
-// the map small and explicit (rather than a generic slugify) means an
-// unrecognized ?city= silently falls back to the default instead of
-// 404'ing the API with garbage.
-const CITY_SLUGS: Record<string, string> = {
-  detroit: 'Detroit',
-  portland: 'Portland',
-};
-const CITY_TO_SLUG: Record<string, string> = Object.fromEntries(
-  Object.entries(CITY_SLUGS).map(([slug, name]) => [name, slug])
-);
+// URL slug ↔ canonical city name. Dynamic (not a hardcoded list) so
+// any city we add to the DB works automatically — "Los Angeles" ⇄
+// "los-angeles", "New York" ⇄ "new-york", etc. The API still receives
+// the canonical name; if a slug doesn't match a real city the API
+// returns no games and we fall back gracefully.
+function citySlug(name: string): string {
+  return name.toLowerCase().replace(/\s+/g, '-');
+}
+function cityFromSlug(slug: string): string {
+  return slug
+    .split('-')
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+const DEFAULT_CITY = 'Detroit';
 
 function readInitialCity(): string {
-  if (typeof window === 'undefined') return 'Detroit';
+  if (typeof window === 'undefined') return DEFAULT_CITY;
   const slug = new URLSearchParams(window.location.search).get('city')?.toLowerCase();
-  return (slug && CITY_SLUGS[slug]) || 'Detroit';
+  return slug ? cityFromSlug(slug) : DEFAULT_CITY;
 }
 
 function readInitialDate(): string {
@@ -51,8 +55,7 @@ export default function GameList() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams();
-    const slug = CITY_TO_SLUG[city];
-    if (slug && slug !== 'detroit') params.set('city', slug); // default city stays clean
+    if (city !== DEFAULT_CITY) params.set('city', citySlug(city)); // default city stays clean
     if (date) params.set('date', date);
     const qs = params.toString();
     const next = qs ? `?${qs}` : window.location.pathname;
@@ -60,6 +63,15 @@ export default function GameList() {
       window.history.replaceState(null, '', next);
     }
   }, [city, date]);
+
+  // Switching cities should always land on "today" — a date that
+  // exists in one city's schedule rarely makes sense in another, and
+  // it matches the natural user mental model of "let me see what's
+  // happening in <new city> now."
+  const handleCityChange = useCallback((next: string) => {
+    setCity(next);
+    setDate('');
+  }, []);
 
   const fetchGames = useCallback(async () => {
     setLoading(true);
@@ -96,7 +108,7 @@ export default function GameList() {
               <h1 className="text-lg font-semibold tracking-tight" style={{ color: '#1d1d1f' }}>WorthGoing</h1>
               <p className="text-xs mt-0.5" style={{ color: '#86868b' }}>Know Before You Go</p>
             </div>
-            <CitySelector currentCity={city} onCityChange={setCity} />
+            <CitySelector currentCity={city} onCityChange={handleCityChange} />
           </div>
         </div>
       </header>
