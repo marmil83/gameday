@@ -652,30 +652,23 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
         </div>
       )}
 
-      {/* Single headline — Apple-style one-voice card. When regret_factor
-          is set, the regret reason IS the headline. Otherwise the verdict
-          is. HIGH-intensity regret gets a thin red accent line on the left
-          to subtly signal stakes without adding a separate row + label.
-          why_worth_it is intentionally dropped from the card surface to
-          avoid three-opinion-block clutter — it stays in the DB for any
-          future expand-detail view. */}
+      {/* Single headline — when regret_factor is set, the regret reason
+          IS the headline; otherwise the verdict is. No color accent — we
+          let the words carry the weight. */}
       {(regret?.reason || insights?.verdict) && (
-        <div
-          className="px-6 pb-4"
-          style={
-            regret?.intensity === 'high'
-              ? { borderLeft: '3px solid #ff3b30', marginLeft: '0' }
-              : undefined
-          }
-        >
-          <p
-            className="text-sm font-semibold leading-snug"
-            style={{
-              color: '#1d1d1f',
-              paddingLeft: regret?.intensity === 'high' ? '0.75rem' : '0',
-            }}
-          >
+        <div className="px-6 pb-3">
+          <p className="text-sm font-semibold leading-snug" style={{ color: '#1d1d1f' }}>
             {regret?.reason || insights?.verdict}
+          </p>
+        </div>
+      )}
+
+      {/* Supporting line — why_worth_it stays as the secondary voice
+          beneath the headline. Muted color keeps the hierarchy clear. */}
+      {insights?.why_worth_it && (
+        <div className="px-6 pb-4">
+          <p className="text-sm leading-relaxed" style={{ color: '#86868b' }}>
+            {insights.why_worth_it}
           </p>
         </div>
       )}
