@@ -319,8 +319,13 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
   const claudeFlags: string[] = enrichment.context_flags || [];
   const isPlayoffsByAnySource = isPlayoffsForPrompt ||
     claudeFlags.includes('playoff') || claudeFlags.includes('elimination') || claudeFlags.includes('finals');
-  const isEliminationByAnySource = isEliminationForPrompt ||
-    claudeFlags.includes('elimination') || claudeFlags.includes('finals');
+  // When series state is uncertain (earlier game unplayed), we cannot
+  // claim elimination — even if ESPN's bracket position or Claude's
+  // output suggests it. Same applies to game-7 / series-finale flags
+  // that imply a specific resolved series state.
+  const isEliminationByAnySource = seriesUncertain
+    ? false
+    : (isEliminationForPrompt || claudeFlags.includes('elimination') || claudeFlags.includes('finals'));
   // Prefer ESPN round (most specific) → prior round → Claude round → default if any source says playoffs
   const claudeRound = KNOWN_PLAYOFF_ROUNDS.find(r => claudeFlags.includes(r)) ?? null;
   const effectivePlayoffRound = bigGame.playoffRound ?? priorRound ?? claudeRound ?? (isPlayoffsByAnySource ? 'first-round' : null);
@@ -347,11 +352,17 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
   });
 
   // 4. Merge big game flags into AI context_flags
+  // When seriesUncertain, suppress every flag that implies a specific
+  // resolved series state: 'elimination' is already false above;
+  // 'game-7' would require the prior 6 games to be played (impossible
+  // if any earlier game is still scheduled); 'finals' refers to the
+  // championship SERIES so it's still valid — but only if ESPN flagged
+  // it independently of the unplayed-game inference.
   const bigGameFlags: string[] = [];
   if (isPlayoffsByAnySource) bigGameFlags.push('playoff');
   if (isEliminationByAnySource) bigGameFlags.push('elimination');
   if (bigGame.isFinals) bigGameFlags.push('finals');
-  if (bigGame.seriesGameNumber === 7) bigGameFlags.push('game-7');
+  if (!seriesUncertain && bigGame.seriesGameNumber === 7) bigGameFlags.push('game-7');
   if (bigGame.isRivalry) bigGameFlags.push('rivalry');
   if (isHomeOpener) bigGameFlags.push('opening-day');
   // Store the round slug directly (e.g. 'conference-semis', 'conference-finals') so rescore.ts
@@ -389,12 +400,11 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
   );
   if (isDoubleheader) bigGameFlags.push('doubleheader');
 
-  // Series finale — final game of a known-length series. ESPN sometimes
-  // gives series length in the seriesRecord (e.g. "Tied 3-3" → next game
-  // is the decider, "Trail 0-3" → potential elimination + finale).
-  // Game-7 already gets its own flag; this catches sweeps and 4-game
-  // first-round series enders.
-  if (bigGame.isElimination && bigGame.seriesGameNumber && bigGame.seriesGameNumber !== 7) {
+  // Series finale — final game of a known-length series. Only fires
+  // when series state is RESOLVED (seriesUncertain=false) — otherwise
+  // we'd label a Game 5 as a finale based on a Game 4 outcome that
+  // hasn't happened yet.
+  if (!seriesUncertain && bigGame.isElimination && bigGame.seriesGameNumber && bigGame.seriesGameNumber !== 7) {
     bigGameFlags.push('series-finale');
   }
   // Filter Claude's flags — opening-day is reliably detected from the game
@@ -403,6 +413,10 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
   // every early-season game.
   const claudeFiltered = (enrichment.context_flags || []).filter(f => {
     if (f === 'opening-day' && !isHomeOpener) return false;
+    // Drop series-state-dependent flags when an earlier game is still
+    // scheduled. These would put the "Elimination Game" / "Game 7" /
+    // "Series Finale" banner on a game whose state isn't yet known.
+    if (seriesUncertain && (f === 'elimination' || f === 'game-7' || f === 'series-finale')) return false;
     return true;
   });
   const mergedContextFlags = [...new Set([...claudeFiltered, ...bigGameFlags])];
