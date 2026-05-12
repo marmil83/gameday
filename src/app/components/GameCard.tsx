@@ -646,30 +646,6 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
         </div>
       )}
 
-      {/* Tags */}
-      {(tags?.length || insights?.effort_level) && (
-        <div className="px-6 pb-4 flex flex-wrap gap-2">
-          {tags?.map((tag) => (
-            <span
-              key={tag.tag_name}
-              className="px-3 py-1 text-xs font-medium rounded-full"
-              style={{ background: '#F2F2F7', color: '#86868b' }}
-            >
-              {tag.tag_name}
-            </span>
-          ))}
-          {insights?.effort_level && (
-            <span
-              className="px-3 py-1 text-xs font-medium rounded-full"
-              style={{ background: '#F2F2F7', color: '#86868b' }}
-            >
-              {insights.effort_level === 'easy' ? 'Easy outing' :
-               insights.effort_level === 'high_effort' ? 'Plan ahead' : 'Moderate effort'}
-            </span>
-          )}
-        </div>
-      )}
-
       {/* Ticket CTA */}
       <div className="px-6 pb-6">
         <button
