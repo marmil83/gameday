@@ -401,6 +401,24 @@ function getCalloutBanner(
   return null;
 }
 
+// Regret factor — encoded into context_flags as `regret-{intensity}:{reason}`
+// to avoid a schema change. Returns null when no regret signal exists so
+// the UI cleanly hides the row (no "0/10" letdown).
+function getRegretFactor(
+  insights: GameCardType['insights'],
+): { intensity: 'high' | 'medium'; reason: string } | null {
+  const flags = (insights?.context_flags as string[]) || [];
+  for (const f of flags) {
+    if (f.startsWith('regret-high:')) {
+      return { intensity: 'high', reason: f.slice('regret-high:'.length).trim() };
+    }
+    if (f.startsWith('regret-medium:')) {
+      return { intensity: 'medium', reason: f.slice('regret-medium:'.length).trim() };
+    }
+  }
+  return null;
+}
+
 export default function GameCard({ data, timezone }: { data: GameCardType; timezone?: string }) {
   const { game, pricing, all_pricing = [], promotions, score, tags, insights, home_team_logo, away_team_logo } = data;
   const dealScore = Number(score?.deal_score) || 0;
@@ -418,6 +436,7 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
   const isGreatDeal = priceScore >= 8 && lowestPrice != null;
   const savings = getSavings(score, lowestPrice);
   const venue = getVenueLogistics(game.venue);
+  const regret = getRegretFactor(insights);
 
   // Only show sources we have a live price + affiliate URL for. Static
   // fallback links (no price, no commission) destroyed trust by mixing
@@ -570,6 +589,43 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
           </div>
         )}
       </div>
+
+      {/* Why you'd regret missing this — middle position, conditional.
+          The section is hidden entirely for ordinary games (no manufactured
+          urgency). HIGH renders as a bold red accent; MEDIUM is softer amber.
+          Sourced from the AI's regret_factor field, encoded into
+          context_flags as `regret-{intensity}:{reason}` for storage. */}
+      {regret && (
+        <div
+          className="mx-6 mb-3 px-4 py-3 rounded-2xl flex items-start gap-3"
+          style={
+            regret.intensity === 'high'
+              ? { background: 'rgba(255,59,48,0.06)', borderLeft: '3px solid #ff3b30' }
+              : { background: '#FAFAF7', borderLeft: '3px solid #bf6900' }
+          }
+        >
+          <span
+            className="shrink-0 mt-0.5 text-base leading-none"
+            aria-hidden="true"
+          >
+            {regret.intensity === 'high' ? '❗' : '⭐'}
+          </span>
+          <div className="flex-1 min-w-0">
+            <p
+              className="text-[10px] font-bold uppercase tracking-wider"
+              style={{ color: regret.intensity === 'high' ? '#ff3b30' : '#bf6900' }}
+            >
+              {regret.intensity === 'high' ? "Why you'd regret missing this" : 'Heads up'}
+            </p>
+            <p
+              className="text-xs mt-1 leading-snug"
+              style={{ color: regret.intensity === 'high' ? '#1d1d1f' : '#3a3a3a' }}
+            >
+              {regret.reason}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Parking + Transit — display-only, helps with "real cost of going" */}
       {venue && (

@@ -437,6 +437,22 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
     );
   }
 
+  // Regret factor — the "why you'd regret missing this" callout. Encoded
+  // into context_flags as `regret-{intensity}:{reason}` so it travels with
+  // existing enrichment storage (no schema change). Strict whitelist on
+  // intensity — Claude occasionally invents 'low' or other variants
+  // despite the prompt saying high|medium|null only.
+  const regret = enrichment.regret_factor;
+  if (
+    regret &&
+    (regret.intensity === 'high' || regret.intensity === 'medium') &&
+    regret.reason &&
+    regret.reason.trim()
+  ) {
+    const cleanReason = regret.reason.replace(/[\r\n]+/g, ' ').replace(/:/g, '—').trim();
+    mergedContextFlags.push(`regret-${regret.intensity}:${cleanReason}`);
+  }
+
   // 5. Save score
   await supabase.from('scores').upsert({
     game_id: gameId,

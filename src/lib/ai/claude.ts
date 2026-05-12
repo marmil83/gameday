@@ -29,6 +29,13 @@ interface GameEnrichment {
   context_flags: string[];
   vibe_tags: string[];
   promo_clarity: string | null;
+  // "Why you'd regret missing this" — a grounded one-sentence callout
+  // surfaced in the UI middle row when there's a real reason. null for
+  // ordinary games — the UI hides the row entirely (no fake urgency).
+  regret_factor: {
+    intensity: 'high' | 'medium' | null;
+    reason: string | null;
+  } | null;
 }
 
 /**
@@ -288,6 +295,10 @@ Generate the following as a JSON object:
 
 10. "promo_clarity": If promotions exist, one practical sentence on what to expect (arrive early? special ticket needed?). Null if no promos.
 
+11. "regret_factor": Object — { "intensity": "high" | "medium" | null, "reason": string | null }. The "why you'd regret missing this" callout. Surface ONLY when there's a real, specific reason a fan would regret skipping THIS game. Default to null for most regular-season games — manufacturing fake urgency destroys reader trust.
+    - intensity: "high" — Game 7, confirmed elimination game (NOT when SERIES STATE UNCERTAIN), finals game, retirement game, debut/farewell of a major star confirmed by current rosters, league-wide opening day. "medium" — marquee matchup with both teams clearly over .500, final scheduled meeting between rivals this season, distinctive theme/giveaway night (bobblehead, jersey, milestone celebration), team's actual home opener.
+    - reason: ONE concrete sentence, max 18 words. Must name the SPECIFIC factor (e.g. "Mother's Day Tote Bag is one of the Dodgers' most popular giveaways"). NEVER use phrases like "selling fast", "few tickets left", "act now" — we have no inventory data and faking it is the line we don't cross. NEVER predict series state when SERIES STATE UNCERTAIN is set. Skip (intensity: null, reason: null) for ordinary games — the UI hides the row when intensity is null.
+
 IMPORTANT RULES:
 - Team records and streaks are provided above — use ONLY those values. Do NOT draw on any external or training knowledge about team performance.
 - If price is unknown, say so — don't guess
@@ -382,6 +393,7 @@ Return ONLY valid JSON. No other text.`,
       context_flags: [],
       vibe_tags: ['chill'],
       promo_clarity: null,
+      regret_factor: null,
     };
   }
 }
