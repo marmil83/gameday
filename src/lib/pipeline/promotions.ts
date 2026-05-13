@@ -24,6 +24,16 @@ async function scrapePageText(url: string, targetDate?: string): Promise<string 
       return null;
     }
 
+    // Silent-redirect detector: fetch follows redirects automatically, so a
+    // promo page that gets retired and 301'd to a generic ticket landing
+    // page would otherwise look like a successful scrape with 0 promos
+    // extracted — and our idempotent wipe-and-rewrite would clear the
+    // prior promos. Log conspicuously so the regression is visible.
+    // Example: MLB Tigers `/tickets/promotions` → 301 → `/tickets/single-game-tickets`.
+    if (response.url && response.url !== url) {
+      console.warn(`[Promo Scrape] URL changed: ${url} → ${response.url} — verify the promo page is still the right one.`);
+    }
+
     const html = await response.text();
     const $ = cheerio.load(html);
 

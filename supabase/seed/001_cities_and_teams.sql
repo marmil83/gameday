@@ -25,7 +25,7 @@ VALUES
   ('Detroit Tigers', 'Tigers', 'DET', 'MLB', 'major',
     (SELECT id FROM cities WHERE name = 'Detroit'),
     'Comerica Park', 'outdoor',
-    'https://www.mlb.com/tigers/tickets/promotions',
+    'https://www.mlb.com/tigers/tickets/promotions/giveaways',
     'detroit-tigers'),
   ('Detroit Lions', 'Lions', 'DET', 'NFL', 'major',
     (SELECT id FROM cities WHERE name = 'Detroit'),
