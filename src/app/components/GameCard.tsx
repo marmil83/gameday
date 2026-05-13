@@ -657,7 +657,7 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
           of overlapping copy on the card. */}
       {insights?.verdict && (
         <div className="px-6 pb-4">
-          <p className="text-sm font-semibold leading-snug" style={{ color: '#1d1d1f' }}>
+          <p className="text-sm leading-relaxed" style={{ color: '#1d1d1f' }}>
             {insights.verdict}
           </p>
         </div>
