@@ -268,9 +268,9 @@ ${promoText}
 
 Generate the following as a JSON object:
 
-1. "why_worth_it": One punchy sentence on why this game is worth showing up for. Lead with the most compelling thing — big game context, a steal of a price, an unmissable promo. Make it specific, not generic.
+1. "why_worth_it": One punchy sentence on why this game is worth showing up for. Lead with the most compelling thing — big game context, a steal of a price, an unmissable promo. Make it specific, not generic. (Kept for the DB; the card does not render this separately from verdict, so do NOT rely on it carrying unique information.)
 
-2. "verdict": One confident, opinionated sentence — your actual take on whether to go. ${verdictGuidance} Don't sit on the fence.
+2. "verdict": ONE-to-TWO sentences. This is the ONLY opinion copy shown on the card, so it must do two jobs: (a) deliver your confident, opinionated recommendation — should the reader go? — and (b) anchor it in the single most compelling specific reason (big-game context, marquee opponent, unmissable promo, steal of a price level, or atmosphere). Lead with the recommendation, then the reason. ${verdictGuidance} Don't sit on the fence. Do NOT restate the same information as why_worth_it word-for-word — they are written together but verdict is the surfaced one.
 
 3. "expectation_summary": One sentence painting a picture of what it'll actually feel like to be there. Honest about energy level — don't hype a rebuilding team's Tuesday night game the same as a playoff clincher.
 
@@ -292,7 +292,12 @@ IMPORTANT RULES:
 - Team records and streaks are provided above — use ONLY those values. Do NOT draw on any external or training knowledge about team performance.
 - If price is unknown, say so — don't guess
 - Each field is 1-2 sentences max — tight writing, no padding
-- NO DOLLAR AMOUNTS in verdict, why_worth_it, expectation_summary, seat_expectation, promo_clarity, or price_insight. Live prices change throughout the day and are displayed by the UI directly; embedding "$172" or "at $204" into copy guarantees it'll go stale and contradict what users see. Always use relative language ("premium", "great value", "above typical", "below average") instead.
+- ABSOLUTE BAN on any price mention in verdict, why_worth_it, expectation_summary, seat_expectation, promo_clarity, or price_insight. Live prices change throughout the day and the UI displays the current price directly; baking any number into the copy guarantees it'll go stale and contradict what users see. This ban covers ALL forms:
+  • Digit currency: "$11", "$13.50", "$232"
+  • Digit + unit: "11 dollars", "13 bucks", "11-dollar seats", "for 25"
+  • Spelled-out numbers + unit: "thirteen bucks", "twelve dollars", "twenty-five-buck seats", "just eleven bucks"
+  • Approximate phrases that still anchor a number: "around fifteen dollars", "under twenty bucks", "for ten and change"
+  Use ONLY relative language: "premium pricing", "well below typical", "fair value for a playoff game", "a steal given the matchup", "bargain pricing", "above league average", etc.
 - Parking & transit info is shown by the UI in its own row — only mention it in copy when it's an unusually notable factor (e.g. SoFi's brutal parking, a venue where transit lets you skip a $40 lot). Never on every game; never restate the dollar amount.
 - ABSOLUTE BAN on opener-language unless the game context above explicitly says it's the home opener / opening day: do NOT write "season opener", "opening night", "home opener", "season tipoff", "fresh season tipoff", "season starts here", "first home game", or any variant. A team having a 0-0 or low-game-count record does NOT mean it's an opener — multiple games happen at the start of every season. The verdict / why_worth_it text MUST avoid this language for any non-opener game; readers see the same opener language across multiple games and lose trust immediately.
 - ABSOLUTE BAN on assuming future series outcomes. If "SERIES STATE UNCERTAIN" appears in the Game Context above, you MUST NOT write definitive statements like "X faces elimination", "Y is one win from advancing", "this is Game N closeout", "with the series tied/led 2-1", or any specific series record. The earlier series game is still scheduled — saying any of this would be predicting the future as fact. Use ONLY conditional language: "could become a closeout if X wins tonight", "stakes depend on tonight's result", "a potential pivotal swing game". Refer to the game number cautiously ("the next game in the series") rather than locking in a specific Game N narrative.
@@ -364,6 +369,36 @@ Return ONLY valid JSON. No other text.`,
           }
         }
         return target;
+      }
+    }
+
+    // Stale-price guard. Even with strict prompt rules, Claude occasionally
+    // sneaks dollar amounts back in — digits ("$13") or spelled out
+    // ("thirteen bucks", "just twelve dollars"). The live UI price refreshes
+    // 6× a day on its own cadence; copy that hardcodes a number goes stale
+    // fast and visibly contradicts what users see. We scrub deterministically
+    // here: cheap, no extra API call, never blocks the response. Grammar can
+    // come out slightly clipped but truthfulness wins over polish.
+    const PRICE_LEAK = /\b(?:(?:just|only|around|about|under|over|for)\s+)?(?:\$\d+(?:\.\d+)?|\d+\s*(?:[- ]?bucks?|[- ]?dollars?|[- ]?(?:dollar|buck)[- ]?seats?)|(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|(?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)[- ](?:one|two|three|four|five|six|seven|eight|nine))[- ](?:bucks?|dollars?|(?:buck|dollar)[- ]?seats?))\b/gi;
+    const priceFields: Array<keyof GameEnrichment> = ['why_worth_it', 'verdict', 'expectation_summary', 'price_insight', 'seat_expectation', 'promo_clarity'];
+    const scrubPrices = (s: string | null | undefined): string | null => {
+      if (typeof s !== 'string') return s ?? null;
+      const cleaned = s
+        .replace(PRICE_LEAK, '')
+        .replace(/\s+,/g, ',')
+        .replace(/\s+\./g, '.')
+        .replace(/\s{2,}/g, ' ')
+        .replace(/\(\s*\)/g, '')
+        .replace(/^\s*[—–\-,]\s*/, '')
+        .replace(/\s*[—–\-]\s*\.\s*$/, '.')
+        .trim();
+      // If scrubbing nuked the sentence to nothing meaningful, leave the
+      // field empty rather than render a half-sentence. UI hides empties.
+      return cleaned.length < 8 ? null : cleaned;
+    };
+    for (const f of priceFields) {
+      if (typeof parsed[f] === 'string') {
+        (parsed as Record<keyof GameEnrichment, string | string[] | null>)[f] = scrubPrices(parsed[f] as string);
       }
     }
 

@@ -607,7 +607,7 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
           dedupePromos() picks the most distinctive single promo so the
           headline reflects the marquee item (giveaway > theme_night > etc.)
           rather than whatever happened to be returned first. */}
-      {topPromo && (
+      {topPromo ? (
         <div
           className="mx-6 mb-4 px-4 py-3 rounded-2xl flex items-start gap-3"
           style={{ background: '#FFF9EC', border: '1px solid rgba(255,149,0,0.15)' }}
@@ -626,22 +626,39 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
             )}
           </div>
         </div>
-      )}
+      ) : ((insights?.context_flags as string[] | undefined)?.includes('playoff') && (
+        // Playoffs almost always have a giveaway, but teams often don't
+        // publish the specific item ahead of time (or our scrape catches
+        // a stale item from a prior round). Show a hedged label rather
+        // than risk an inaccurate one — admins can edit in the real
+        // item once it's confirmed.
+        <div
+          className="mx-6 mb-4 px-4 py-3 rounded-2xl flex items-start gap-3"
+          style={{ background: '#FFF9EC', border: '1px solid rgba(255,149,0,0.15)' }}
+        >
+          <div className="shrink-0 mt-0.5" style={{ color: '#bf6900' }}>
+            <PromoIcon type="giveaway" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#bf6900' }}>
+              Playoff giveaway expected
+            </p>
+            <p className="text-xs mt-1 leading-snug" style={{ color: '#8a5500' }}>
+              Item TBD — check the team&rsquo;s site closer to game day.
+            </p>
+          </div>
+        </div>
+      ))}
 
-      {/* Verdict */}
+      {/* Verdict — unified take. Combines the recommendation ("should
+          you go") with the specific compelling hook (big game / steal
+          price / unmissable promo). why_worth_it stays in the DB for
+          future use but is no longer rendered to avoid two paragraphs
+          of overlapping copy on the card. */}
       {insights?.verdict && (
-        <div className="px-6 pb-3">
+        <div className="px-6 pb-4">
           <p className="text-sm font-semibold leading-snug" style={{ color: '#1d1d1f' }}>
             {insights.verdict}
-          </p>
-        </div>
-      )}
-
-      {/* Why worth it */}
-      {insights?.why_worth_it && (
-        <div className="px-6 pb-4">
-          <p className="text-sm leading-relaxed" style={{ color: '#86868b' }}>
-            {insights.why_worth_it}
           </p>
         </div>
       )}
