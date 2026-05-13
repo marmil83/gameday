@@ -60,14 +60,17 @@ export async function runPipelineForCity(cityId: string): Promise<PipelineResult
   if (standingsResult.errors.length > 0) allErrors.push(...standingsResult.errors);
 
   // Step 1a: Ingest major-league games from ESPN (source of truth for opponent/date/time)
+  // Window: 5 days. Public site only renders today + next 2 days; the extra
+  // 2 days are a buffer so a delayed pipeline run never leaves the visible
+  // window unenriched. Was 14 — dropping cuts Sonnet enrichment volume ~64%.
   console.log(`[Pipeline] Step 1a: Ingesting ESPN events for city ${cityId}`);
-  const espnResult = await ingestESPNEventsForCity(cityId, 14);
+  const espnResult = await ingestESPNEventsForCity(cityId, 5);
   allErrors.push(...espnResult.errors);
   console.log(`[Pipeline] ESPN: ${espnResult.found} found, ${espnResult.inserted} inserted, ${espnResult.migrated} migrated, ${espnResult.updated} updated`);
 
   // Step 1b: Attach SeatGeek pricing to ESPN game rows (ticket links + prices)
   console.log(`[Pipeline] Step 1b: Attaching SeatGeek pricing for city ${cityId}`);
-  await attachSeatGeekPricingForCity(cityId, 14);
+  await attachSeatGeekPricingForCity(cityId, 5);
 
   // Step 1c: Ingest minor-league games from SeatGeek (not on ESPN)
   console.log(`[Pipeline] Step 1c: Ingesting minor-league events for city ${cityId}`);
@@ -80,7 +83,7 @@ export async function runPipelineForCity(cityId: string): Promise<PipelineResult
     errors: [...espnResult.errors, ...minorResult.errors],
   };
 
-  // Step 2: Scrape promotions for the next 7 days so upcoming games are covered.
+  // Step 2: Scrape promotions for the next 5 days (matches ingestion window).
   // Dates are generated in the CITY's local timezone — promo pages list dates
   // as the team writes them (always local), so we must match in the same frame.
   console.log(`[Pipeline] Step 2: Scraping promotions for city ${cityId}`);
@@ -91,7 +94,7 @@ export async function runPipelineForCity(cityId: string): Promise<PipelineResult
   const localFmt = new Intl.DateTimeFormat('en-CA', {
     timeZone: cityTz, year: 'numeric', month: '2-digit', day: '2-digit',
   });
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 5; i++) {
     const d = new Date();
     d.setDate(d.getDate() + i);
     const dateStr = localFmt.format(d); // local YYYY-MM-DD for this city

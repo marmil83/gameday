@@ -23,7 +23,7 @@ interface PostGameResult {
 
 export async function markCompletedAndRefreshDependents(
   supabase: SupabaseClient,
-  enrichSingleGame: (gameId: string) => Promise<void>,
+  enrichSingleGame: (gameId: string, force?: boolean) => Promise<void>,
 ): Promise<PostGameResult> {
   const errors: string[] = [];
   const cutoff = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
@@ -80,7 +80,11 @@ export async function markCompletedAndRefreshDependents(
   let refreshed = 0;
   for (const id of dependentIds) {
     try {
-      await enrichSingleGame(id);
+      // Force: post-game dependents must re-enrich even if their input
+      // hash would otherwise look unchanged. The thing that changed is
+      // OUR knowledge — the prior game just resolved, so the verdict copy
+      // for this game needs to be rewritten to reflect the new series state.
+      await enrichSingleGame(id, true);
       refreshed++;
     } catch (e) {
       errors.push(`Failed to re-enrich ${id}: ${(e as Error).message}`);

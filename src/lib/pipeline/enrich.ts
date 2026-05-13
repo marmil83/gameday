@@ -9,6 +9,33 @@ import { detectBigGame } from './big-game-detector';
 import { LEAGUE_AVG_PRICES, GAMES_PER_CITY, getPriceBaseline } from '../constants';
 import { getVenueLogistics as getVenueLogisticsServer } from '../venues';
 import type { Game, PricingSnapshot, Promotion } from '@/types/database';
+import { createHash } from 'crypto';
+
+// Tag used to store the input-hash inline in game_insights.context_flags.
+// We piggyback here (instead of adding a column) to avoid a schema change.
+// All other context_flags readers use exact .includes() lookups for known
+// values like 'playoff' / 'rivalry', so a prefixed entry is invisible to
+// them. extractHash() / withHash() are the only places that touch it.
+const HASH_PREFIX = '_h:';
+const STALENESS_FLOOR_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+function extractHash(flags: string[] | null | undefined): string | null {
+  if (!flags) return null;
+  const entry = flags.find(f => typeof f === 'string' && f.startsWith(HASH_PREFIX));
+  return entry ? entry.slice(HASH_PREFIX.length) : null;
+}
+function stripHash(flags: string[] | null | undefined): string[] {
+  return (flags || []).filter(f => !(typeof f === 'string' && f.startsWith(HASH_PREFIX)));
+}
+
+// Bucket the price to ~10% granularity so a $1 wiggle doesn't bust the hash
+// every refresh. The verdict copy only changes meaningfully when the price
+// jumps a tier (e.g. "premium" vs "bargain"), not on every refresh tick.
+function priceBucket(p: number | null | undefined): string {
+  if (p == null) return 'null';
+  if (p <= 0) return '0';
+  return Math.round(Math.log10(p) * 10).toString();
+}
 
 /**
  * Get the best pricing snapshot for a game.
@@ -58,7 +85,7 @@ async function getPromotions(gameId: string): Promise<Promotion[]> {
 /**
  * Enrich a single game with AI insights, scores, and tags
  */
-export async function enrichSingleGame(gameId: string): Promise<void> {
+export async function enrichSingleGame(gameId: string, force = false): Promise<void> {
   const supabase = createServiceClient();
 
   const { data: game } = await supabase
@@ -68,6 +95,18 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
     .single();
 
   if (!game) return;
+
+  // Pull existing insights early so we can short-circuit on the hash check.
+  // Tracking what we read here keeps the skip logic single-pass.
+  const { data: existingInsights } = await supabase
+    .from('game_insights')
+    .select('context_flags, updated_at')
+    .eq('game_id', gameId)
+    .single();
+  const existingHash = extractHash(existingInsights?.context_flags as string[] | null);
+  const existingAgeMs = existingInsights?.updated_at
+    ? Date.now() - new Date(existingInsights.updated_at).getTime()
+    : Infinity;
 
   const pricing = await getLatestPricing(gameId);
   const promotions = await getPromotions(gameId);
@@ -250,6 +289,46 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
     game.away_team_name = bigGame.detectedOpponent;
   }
 
+  // Skip-if-unchanged: fingerprint every input that drives the verdict
+  // copy. If the fingerprint matches the prior enrichment AND the row is
+  // fresher than the staleness floor, skip the Sonnet call entirely.
+  // Force=true (post-game dependent refresh) bypasses the skip.
+  //
+  // What's NOT in the hash: weather (changes hourly, doesn't justify a
+  // re-enrich on its own), exact pricing dollar value (only the bucket
+  // matters — see priceBucket).
+  const inputFingerprint = JSON.stringify({
+    home: game.home_team_name,
+    away: game.away_team_name,
+    league: game.league,
+    venue: game.venue,
+    start: game.start_time,
+    priceBucket: priceBucket(pricing?.lowest_price ?? null),
+    promos: promotions
+      .map(p => `${p.promo_type}|${p.promo_item}|${(p.promo_description || '').slice(0, 80)}`)
+      .sort()
+      .join(';'),
+    homeRecord: homeTeam?.wins != null ? `${homeTeam.wins}-${homeTeam.losses}` : null,
+    awayRecord: awayTeam?.wins != null ? `${awayTeam.wins}-${awayTeam.losses}` : null,
+    homeStreak: homeTeam?.streak ?? null,
+    homeL10: homeLast10,
+    awayL10: awayLast10,
+    isPlayoffs: isPlayoffsForPrompt,
+    isElimination: isEliminationForPrompt,
+    isFinals: bigGame.isFinals,
+    isRivalry: bigGame.isRivalry,
+    isHomeOpener,
+    seriesGameNumber: bigGame.seriesGameNumber,
+    seriesUncertain,
+    playoffRound: playoffRoundForPrompt,
+  });
+  const inputHash = createHash('sha256').update(inputFingerprint).digest('hex').slice(0, 12);
+
+  if (!force && existingHash === inputHash && existingAgeMs < STALENESS_FLOOR_MS) {
+    console.log(`[Enrich] Skip ${gameId} — inputs unchanged (hash=${inputHash}, age=${Math.round(existingAgeMs / 3600_000)}h)`);
+    return;
+  }
+
   // 1. AI Enrichment — pass big game context so copy leads with stakes
   const enrichment = await enrichGame({
     homeTeam: game.home_team_name,
@@ -419,7 +498,11 @@ export async function enrichSingleGame(gameId: string): Promise<void> {
     if (seriesUncertain && (f === 'elimination' || f === 'game-7' || f === 'series-finale')) return false;
     return true;
   });
-  let mergedContextFlags = [...new Set([...claudeFiltered, ...bigGameFlags])];
+  // Strip any prior `_h:` tag and prepend the freshly-computed hash so a
+  // subsequent run can detect "inputs identical → skip Claude". Sits at
+  // index 0 by convention; readers tolerate it because all consumers use
+  // exact .includes() lookups for known values.
+  let mergedContextFlags = [`${HASH_PREFIX}${inputHash}`, ...new Set([...stripHash(claudeFiltered), ...bigGameFlags])];
 
   // Defense-in-depth invariant: the banner FLAG must always match the
   // verdict COPY. If Claude wrote conditional/hedged language about
@@ -507,7 +590,18 @@ export async function enrichGamesForCity(cityId: string): Promise<{
   const supabase = createServiceClient();
   const errors: string[] = [];
 
-  const { data: games } = await supabase
+  // Recency stagger: the morning pipeline run (~5:30 AM ET / 09:30 UTC)
+  // covers every upcoming game in the window. The evening run only
+  // refreshes today + tomorrow — games starting within 48h. Distant
+  // games rarely change meaningfully between runs, and the morning
+  // pass already touched them once today. Cuts Sonnet volume on the
+  // evening run roughly in half.
+  const utcHour = new Date().getUTCHours();
+  const isMorningRun = utcHour >= 6 && utcHour < 15;
+  const RECENT_CUTOFF_MS = 48 * 60 * 60 * 1000;
+  const recentCutoffISO = new Date(Date.now() + RECENT_CUTOFF_MS).toISOString();
+
+  let query = supabase
     .from('games')
     .select('id')
     .eq('city_id', cityId)
@@ -516,10 +610,16 @@ export async function enrichGamesForCity(cityId: string): Promise<{
     .gte('start_time', new Date().toISOString())
     .order('start_time', { ascending: true })
     .limit(50);
+  if (!isMorningRun) {
+    query = query.lte('start_time', recentCutoffISO);
+  }
+  const { data: games } = await query;
 
   if (!games || games.length === 0) {
     return { enriched: 0, errors: [] };
   }
+
+  console.log(`[Enrich] ${isMorningRun ? 'Morning' : 'Evening'} run — ${games.length} games queued for city ${cityId}`);
 
   let enriched = 0;
   for (const game of games) {
