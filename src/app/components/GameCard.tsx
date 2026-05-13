@@ -650,15 +650,25 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
         </div>
       ))}
 
-      {/* Verdict — unified take. Combines the recommendation ("should
-          you go") with the specific compelling hook (big game / steal
-          price / unmissable promo). why_worth_it stays in the DB for
-          future use but is no longer rendered to avoid two paragraphs
-          of overlapping copy on the card. */}
+      {/* Verdict — the opinionated recommendation (should you go).
+          Kept bold so it reads as the headline / pull-quote. */}
       {insights?.verdict && (
-        <div className="px-6 pb-4">
-          <p className="text-sm leading-relaxed" style={{ color: '#1d1d1f' }}>
+        <div className="px-6 pb-3">
+          <p className="text-sm font-semibold leading-snug" style={{ color: '#1d1d1f' }}>
             {insights.verdict}
+          </p>
+        </div>
+      )}
+
+      {/* Why worth it — the specific factual hook that backs the
+          verdict. Muted body weight so the two blocks read as
+          headline + supporting line, not two competing voices. The
+          prompt enforces that these two fields carry DIFFERENT angles
+          (recommendation vs. specific reason). */}
+      {insights?.why_worth_it && (
+        <div className="px-6 pb-4">
+          <p className="text-sm leading-relaxed" style={{ color: '#86868b' }}>
+            {insights.why_worth_it}
           </p>
         </div>
       )}

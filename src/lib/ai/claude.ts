@@ -268,13 +268,20 @@ ${promoText}
 
 Generate the following as a JSON object:
 
-1. "why_worth_it": One punchy sentence on why this game is worth showing up for. Lead with the most compelling thing — big game context, a steal of a price, an unmissable promo. Make it specific, not generic. (Kept for the DB; the card does not render this separately from verdict, so do NOT rely on it carrying unique information.)
+CRITICAL — verdict and why_worth_it are TWO DIFFERENT FIELDS rendered as two stacked blocks on the card. They MUST cover different angles. Treat them like a headline + supporting paragraph:
+   • verdict = the OPINION / RECOMMENDATION (subjective, opinionated take)
+   • why_worth_it = the FACTUAL HOOK (objective, specific reasons backing the take)
+   If you find yourself writing the same idea in both, rewrite one. Overlap is the #1 failure mode for these two fields.
 
-2. "verdict": TWO-to-THREE sentences (~30-55 words total). This is the ONLY opinion copy shown on the card, so it has to be substantive — not a one-line shrug. Structure it like this:
-   • Sentence 1: confident, opinionated recommendation — should the reader go, and for whom / under what frame? Use real personality, not corporate hedging.
-   • Sentence 2 (and optionally 3): the specific factual hook that backs the take — big-game context, marquee opponent, team form, atmosphere, an unmissable promo, or a relative price call.
-   Reference example of the right length and texture: "Go if you love the unpredictability of bad teams trying to figure it out, but temper expectations for playoff-caliber soccer. Two struggling teams meeting at Providence Park means desperate soccer and potential chaos — plus you're getting into MLS action for above-typical pricing." (Notice: opinionated lead, specific reasoning, relative price language — never a dollar amount.)
-   ${verdictGuidance} Don't sit on the fence. Do NOT restate why_worth_it word-for-word — verdict is the surfaced one; carry the substance here.
+1. "verdict": ONE punchy sentence — your confident, opinionated recommendation. Should the reader go, and for whom / under what frame? Pure take, minimal facts. ${verdictGuidance} Don't sit on the fence. Personality, not corporate hedging.
+   Good shape (verdict only): "Go if you love watching two struggling teams figure it out, but temper expectations for playoff-caliber soccer."
+   Bad shape: "Two struggling teams at Providence Park — go if you like chaos." (← that's the factual hook bleeding into the recommendation.)
+
+2. "why_worth_it": ONE-to-TWO sentences — the SPECIFIC FACTUAL HOOK that backs the verdict. Concrete, not opinionated. This is where records, recent form, marquee context, atmosphere notes, rivalry details, promo references, or relative price calls go. Lead with the most compelling concrete detail.
+   Good shape (why_worth_it only, paired with the verdict above): "Two struggling teams meeting at Providence Park means desperate soccer and potential chaos — plus you're getting into MLS action for above-typical pricing."
+   Bad shape: "It's worth going because the atmosphere will be fun." (← too vague, no concrete hook.)
+
+ANGLE-SEPARATION CHECK before returning JSON: read verdict and why_worth_it back to back. If a reader could not tell which one is the opinion and which is the fact, rewrite. They should feel like "headline + supporting paragraph", not "two ways of saying the same thing".
 
 3. "expectation_summary": One sentence painting a picture of what it'll actually feel like to be there. Honest about energy level — don't hype a rebuilding team's Tuesday night game the same as a playoff clincher.
 
@@ -295,7 +302,7 @@ Generate the following as a JSON object:
 IMPORTANT RULES:
 - Team records and streaks are provided above — use ONLY those values. Do NOT draw on any external or training knowledge about team performance.
 - If price is unknown, say so — don't guess
-- Each field is 1-2 sentences max — tight writing, no padding. EXCEPTION: verdict is 2-3 sentences because it's the only opinion copy on the card and must be substantive.
+- Each field is 1-2 sentences max — tight writing, no padding. verdict is the tightest of all (one sentence, the opinion).
 - ABSOLUTE BAN on any price mention in verdict, why_worth_it, expectation_summary, seat_expectation, promo_clarity, or price_insight. Live prices change throughout the day and the UI displays the current price directly; baking any number into the copy guarantees it'll go stale and contradict what users see. This ban covers ALL forms:
   • Digit currency: "$11", "$13.50", "$232"
   • Digit + unit: "11 dollars", "13 bucks", "11-dollar seats", "for 25"
