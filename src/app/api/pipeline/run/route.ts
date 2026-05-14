@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { runPipelineForCity, runFullPipeline } from '@/lib/pipeline/orchestrator';
+import { closeBrowserPool } from '@/lib/pipeline/promotions';
 import { createServerSupabaseClient, createServiceClient } from '@/lib/supabase/server';
 
 export const maxDuration = 300; // 5 min timeout for cron
@@ -59,8 +60,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'City not found' }, { status: 404 });
     }
 
-    const result = await runPipelineForCity(city.id);
-    return NextResponse.json(result);
+    try {
+      const result = await runPipelineForCity(city.id);
+      return NextResponse.json(result);
+    } finally {
+      // runFullPipeline closes its own pool, but the single-city branch
+      // doesn't go through that wrapper — so we have to close here too.
+      await closeBrowserPool();
+    }
   }
 
   const results = await runFullPipeline();

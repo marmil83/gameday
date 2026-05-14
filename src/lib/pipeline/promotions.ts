@@ -27,6 +27,61 @@ function needsBrowserRendering(url: string): boolean {
 }
 
 /**
+ * Browser pool. The first puppeteer-rendered URL in a pipeline run
+ * launches Chrome; every subsequent URL reuses the same instance,
+ * just opening a fresh page. Cuts ~3-5s off each non-first launch.
+ *
+ * `closeBrowserPool()` is called at the end of each pipeline run by
+ * the orchestrator so we don't leak a Chrome process between runs in
+ * a long-lived environment (local dev). On Vercel each invocation
+ * gets a fresh Node process, so leaking would self-resolve, but we
+ * close explicitly anyway — keeps memory usage predictable.
+ */
+type PuppeteerBrowser = Awaited<ReturnType<Awaited<ReturnType<typeof loadPuppeteer>>['launch']>>;
+let browserPromise: Promise<PuppeteerBrowser> | null = null;
+
+async function loadPuppeteer() {
+  const puppeteerMod = await import('puppeteer-extra');
+  const stealthMod = await import('puppeteer-extra-plugin-stealth');
+  const puppeteer = puppeteerMod.default;
+  const Stealth = stealthMod.default;
+  // .use() is idempotent — calling it on every load is fine.
+  puppeteer.use(Stealth());
+  return puppeteer;
+}
+
+async function getBrowser(): Promise<PuppeteerBrowser> {
+  if (browserPromise) return browserPromise;
+  browserPromise = (async () => {
+    const puppeteer = await loadPuppeteer();
+    const chromiumMod = await import('@sparticuz/chromium');
+    const chromium = chromiumMod.default;
+    const isServerless = !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+    console.log(`[Promo Scrape] Launching browser (serverless=${isServerless})`);
+    return await puppeteer.launch({
+      args: isServerless ? chromium.args : ['--no-sandbox', '--disable-setuid-sandbox'],
+      defaultViewport: { width: 1280, height: 800 },
+      executablePath: isServerless ? await chromium.executablePath() : undefined,
+      headless: true,
+    });
+  })();
+  return browserPromise;
+}
+
+export async function closeBrowserPool(): Promise<void> {
+  if (!browserPromise) return;
+  const p = browserPromise;
+  browserPromise = null;
+  try {
+    const browser = await p;
+    await browser.close();
+    console.log('[Promo Scrape] Browser pool closed');
+  } catch (err) {
+    console.warn('[Promo Scrape] Browser close failed:', err);
+  }
+}
+
+/**
  * Fetch raw HTML via headless Chrome. Used for hosts where the actual
  * promo schedule is hydrated client-side and a static fetch returns
  * only the React app shell (MLB, NBA, NFL — verified empirically).
@@ -36,27 +91,10 @@ function needsBrowserRendering(url: string): boolean {
  * of bot-detection blocks on big-league sites.
  */
 async function fetchHtmlViaBrowser(url: string): Promise<string | null> {
-  // Dynamic imports so puppeteer-extra's stealth plugin only loads when
-  // we actually need it — keeps the Node cold-start cost on the static
-  // path (which handles 80%+ of teams) close to zero.
-  const puppeteerMod = await import('puppeteer-extra');
-  const stealthMod = await import('puppeteer-extra-plugin-stealth');
-  const chromiumMod = await import('@sparticuz/chromium');
-  const puppeteer = puppeteerMod.default;
-  const Stealth = stealthMod.default;
-  const chromium = chromiumMod.default;
-  puppeteer.use(Stealth());
-
-  const isServerless = !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
-  let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
+  let page: Awaited<ReturnType<PuppeteerBrowser['newPage']>> | null = null;
   try {
-    browser = await puppeteer.launch({
-      args: isServerless ? chromium.args : ['--no-sandbox', '--disable-setuid-sandbox'],
-      defaultViewport: { width: 1280, height: 800 },
-      executablePath: isServerless ? await chromium.executablePath() : undefined,
-      headless: true,
-    });
-    const page = await browser.newPage();
+    const browser = await getBrowser();
+    page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36');
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 30_000 });
     // Give React a moment to finish hydrating after networkidle fires.
@@ -69,7 +107,7 @@ async function fetchHtmlViaBrowser(url: string): Promise<string | null> {
     console.error(`[Promo Scrape] Puppeteer error on ${url}:`, err);
     return null;
   } finally {
-    if (browser) await browser.close().catch(() => {});
+    if (page) await page.close().catch(() => {});
   }
 }
 

@@ -4,7 +4,7 @@
 import { createServiceClient } from '../supabase/server';
 import { ingestESPNEventsForCity, attachSeatGeekPricingForCity } from './espn-events';
 import { ingestEventsForCity } from './events';
-import { scrapePromotionsForCity } from './promotions';
+import { scrapePromotionsForCity, closeBrowserPool } from './promotions';
 import { enrichGamesForCity, enrichSingleGame } from './enrich';
 import { updateStandings } from './standings';
 import { rescoreAllGames } from './rescore';
@@ -166,9 +166,17 @@ export async function runFullPipeline(): Promise<PipelineResult[]> {
   if (!cities) return [];
 
   const results: PipelineResult[] = [];
-  for (const city of cities) {
-    const result = await runPipelineForCity(city.id);
-    results.push(result);
+  try {
+    for (const city of cities) {
+      const result = await runPipelineForCity(city.id);
+      results.push(result);
+    }
+  } finally {
+    // Close the puppeteer browser pool exactly once per full run, after
+    // every city has had its turn. Keeping Chrome alive across cities
+    // (Detroit → Portland → LA in our case) lets all puppeteer scrapes
+    // share one launch instead of paying ~3-5s per JS-rendered URL.
+    await closeBrowserPool();
   }
 
   return results;
