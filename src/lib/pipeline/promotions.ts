@@ -161,11 +161,25 @@ export async function scrapePromotionsForTeam(
     return { extracted: 0, errors: [] };
   }
 
-  // Now do the expensive work: scrape the page and call the AI.
-  const rawText = await scrapePageText(team.promo_page_url, targetDate);
-  if (!rawText) {
+  // Promo content for some teams now lives across MULTIPLE pages (e.g.
+  // MLB split the old single `/tickets/promotions` page into separate
+  // `/promotions/giveaways` and `/specials/events` subsections — one
+  // covers bobbleheads / t-shirts, the other covers theme nights /
+  // fireworks / value games). Support a comma-separated list of URLs in
+  // promo_page_url; we fetch each, concatenate the text, and pass the
+  // combined corpus to the AI as one block. Single-URL configs are the
+  // common case and work unchanged.
+  const urls = team.promo_page_url.split(',').map(u => u.trim()).filter(Boolean);
+  const sourceUrl = urls[0]; // primary URL for persistence + error messages
+  const textChunks: string[] = [];
+  for (const u of urls) {
+    const chunk = await scrapePageText(u, targetDate);
+    if (chunk) textChunks.push(chunk);
+  }
+  if (textChunks.length === 0) {
     return { extracted: 0, errors: [`Failed to scrape ${team.promo_page_url}`] };
   }
+  const rawText = textChunks.join('\n\n--- next page ---\n\n');
 
   const promotions = await extractPromotions(rawText, team.name, targetDate);
 
@@ -208,7 +222,7 @@ export async function scrapePromotionsForTeam(
 
     const { error } = await supabase.from('promotions').insert({
       game_id: matchedGame.id,
-      source_url: team.promo_page_url,
+      source_url: sourceUrl,
       raw_text: rawText.slice(0, 2000), // Store truncated raw text
       promo_type: promo.promo_type,
       promo_item: promo.promo_item,
