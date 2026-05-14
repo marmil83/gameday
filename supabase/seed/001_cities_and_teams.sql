@@ -89,7 +89,7 @@ VALUES
   ('Portland Thorns FC', 'Thorns', 'POR', 'NWSL', 'major',
     (SELECT id FROM cities WHERE name = 'Portland'),
     'Providence Park', 'outdoor',
-    'https://www.thornsfc.com/tickets/promotions',
+    'https://www.thorns.com/thorns-promotional-schedule',
     'portland-thorns-fc'),
   ('Portland Fire', 'Fire', 'POR', 'WNBA', 'major',
     (SELECT id FROM cities WHERE name = 'Portland'),
