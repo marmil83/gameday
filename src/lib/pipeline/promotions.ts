@@ -6,35 +6,113 @@ import { createServiceClient } from '../supabase/server';
 import { extractPromotions } from '../ai/claude';
 import type { Team } from '@/types/database';
 
+// Hosts whose promo content is rendered client-side by a React app —
+// static fetch returns only a hydrating shell with no per-game promo
+// text in it. We route these through a headless browser instead.
+// Audit-verified: mlb.com, nba.com, detroitlions.com all hit this.
+// Add more here as we discover them.
+const JS_RENDERED_HOSTS = new Set<string>([
+  'www.mlb.com', 'mlb.com',
+  'www.nba.com', 'nba.com',
+  'www.detroitlions.com', 'detroitlions.com',
+]);
+
+function needsBrowserRendering(url: string): boolean {
+  try {
+    const host = new URL(url).host.toLowerCase();
+    return JS_RENDERED_HOSTS.has(host);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Fetch raw HTML via headless Chrome. Used for hosts where the actual
+ * promo schedule is hydrated client-side and a static fetch returns
+ * only the React app shell (MLB, NBA, NFL — verified empirically).
+ *
+ * Uses @sparticuz/chromium in production (Vercel serverless) and the
+ * locally-installed Chromium in dev. Stealth plugin reduces the chance
+ * of bot-detection blocks on big-league sites.
+ */
+async function fetchHtmlViaBrowser(url: string): Promise<string | null> {
+  // Dynamic imports so puppeteer-extra's stealth plugin only loads when
+  // we actually need it — keeps the Node cold-start cost on the static
+  // path (which handles 80%+ of teams) close to zero.
+  const puppeteerMod = await import('puppeteer-extra');
+  const stealthMod = await import('puppeteer-extra-plugin-stealth');
+  const chromiumMod = await import('@sparticuz/chromium');
+  const puppeteer = puppeteerMod.default;
+  const Stealth = stealthMod.default;
+  const chromium = chromiumMod.default;
+  puppeteer.use(Stealth());
+
+  const isServerless = !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+  let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
+  try {
+    browser = await puppeteer.launch({
+      args: isServerless ? chromium.args : ['--no-sandbox', '--disable-setuid-sandbox'],
+      defaultViewport: { width: 1280, height: 800 },
+      executablePath: isServerless ? await chromium.executablePath() : undefined,
+      headless: true,
+    });
+    const page = await browser.newPage();
+    await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36');
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30_000 });
+    // Give React a moment to finish hydrating after networkidle fires.
+    // 1.5s is empirically enough for MLB's schedule grid; the page's
+    // initial paint is usually done by then but post-paint promo
+    // annotations sometimes lag by a beat.
+    await new Promise(r => setTimeout(r, 1500));
+    return await page.content();
+  } catch (err) {
+    console.error(`[Promo Scrape] Puppeteer error on ${url}:`, err);
+    return null;
+  } finally {
+    if (browser) await browser.close().catch(() => {});
+  }
+}
+
 /**
  * Scrape text content from a URL, optionally focused around a target date
  * so we don't waste Claude's output budget on past results that appear
  * earlier on the page (e.g. AHL/MiLB sites render the full season).
+ *
+ * Routes through a headless browser for hosts in JS_RENDERED_HOSTS;
+ * uses a plain HTTP fetch + cheerio for everyone else.
  */
 async function scrapePageText(url: string, targetDate?: string): Promise<string | null> {
   try {
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; WorthGoing/1.0)',
-      },
-    });
+    let html: string;
+    if (needsBrowserRendering(url)) {
+      const rendered = await fetchHtmlViaBrowser(url);
+      if (!rendered) return null;
+      html = rendered;
+    } else {
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; WorthGoing/1.0)',
+        },
+      });
 
-    if (!response.ok) {
-      console.error(`Failed to scrape ${url}: ${response.status}`);
-      return null;
+      if (!response.ok) {
+        console.error(`Failed to scrape ${url}: ${response.status}`);
+        return null;
+      }
+
+      // Silent-redirect detector: fetch follows redirects automatically, so a
+      // promo page that gets retired and 301'd to a generic ticket landing
+      // page would otherwise look like a successful scrape with 0 promos
+      // extracted — and our idempotent wipe-and-rewrite would clear the
+      // prior promos. Log conspicuously so the regression is visible.
+      // Example: MLB Tigers `/tickets/promotions` → 301 → `/tickets/single-game-tickets`.
+      if (response.url && response.url !== url) {
+        console.warn(`[Promo Scrape] URL changed: ${url} → ${response.url} — verify the promo page is still the right one.`);
+      }
+
+      html = await response.text();
     }
 
-    // Silent-redirect detector: fetch follows redirects automatically, so a
-    // promo page that gets retired and 301'd to a generic ticket landing
-    // page would otherwise look like a successful scrape with 0 promos
-    // extracted — and our idempotent wipe-and-rewrite would clear the
-    // prior promos. Log conspicuously so the regression is visible.
-    // Example: MLB Tigers `/tickets/promotions` → 301 → `/tickets/single-game-tickets`.
-    if (response.url && response.url !== url) {
-      console.warn(`[Promo Scrape] URL changed: ${url} → ${response.url} — verify the promo page is still the right one.`);
-    }
-
-    const html = await response.text();
     const $ = cheerio.load(html);
 
     // Remove scripts, styles, nav, footer
