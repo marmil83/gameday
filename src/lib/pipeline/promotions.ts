@@ -96,12 +96,15 @@ async function fetchHtmlViaBrowser(url: string): Promise<string | null> {
     const browser = await getBrowser();
     page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36');
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30_000 });
-    // Give React a moment to finish hydrating after networkidle fires.
-    // 1.5s is empirically enough for MLB's schedule grid; the page's
-    // initial paint is usually done by then but post-paint promo
-    // annotations sometimes lag by a beat.
-    await new Promise(r => setTimeout(r, 1500));
+    // domcontentloaded + a generous fixed post-wait, NOT networkidle2.
+    // MLB.com has continuous background telemetry that prevents
+    // networkidle from ever firing within the 30s timeout (Angels
+    // schedule page reliably times out, Tigers got lucky). The post-wait
+    // is what actually matters — React paints the promo schedule grid
+    // a beat after DOMContentLoaded, and 3-4s is empirically enough for
+    // every page we've tested.
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    await new Promise(r => setTimeout(r, 4000));
     return await page.content();
   } catch (err) {
     console.error(`[Promo Scrape] Puppeteer error on ${url}:`, err);
