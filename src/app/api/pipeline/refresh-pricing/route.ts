@@ -15,6 +15,7 @@ import { attachSeatGeekPricingForCity } from '@/lib/pipeline/espn-events';
 import { rescoreAllGames } from '@/lib/pipeline/rescore';
 import { enrichSingleGame } from '@/lib/pipeline/enrich';
 import { markCompletedAndRefreshDependents } from '@/lib/pipeline/post-game';
+import { refreshAllUpcomingWeather } from '@/lib/pipeline/weather';
 
 export const maxDuration = 300; // 5 min timeout — pricing fetches are I/O-bound
 
@@ -46,6 +47,16 @@ async function refreshPricing() {
     }
   }
 
+  // Weather refresh — outdoor games only, runs after pricing so a single
+  // pass touches every outdoor game in the 5-day window with fresh
+  // forecast data. Forecasts get more accurate as game time approaches,
+  // and full enrichment only refreshes weather ~2×/day (and even that
+  // gets hash-skipped when other inputs are stable), so refreshing here
+  // 4×/day is what actually keeps the card honest on game day.
+  console.log('[refresh-pricing] Refreshing weather for outdoor games');
+  const weather = await refreshAllUpcomingWeather();
+  console.log(`[refresh-pricing] weather: ${weather.updated} updated, ${weather.skipped} skipped, ${weather.errors.length} errors`);
+
   console.log('[refresh-pricing] Rescoring all games with fresh pricing');
   const rescore = await rescoreAllGames();
 
@@ -53,10 +64,11 @@ async function refreshPricing() {
     started_at: startedAt,
     finished_at: new Date().toISOString(),
     // tokens_used true ONLY if the post-game step actually fired
-    // re-enrichments; pricing + rescore are pure infra calls.
+    // re-enrichments; pricing + rescore + weather are pure infra calls.
     tokens_used: postGame.dependents_refreshed > 0,
     post_game: postGame,
     cities: cityResults,
+    weather: { updated: weather.updated, skipped: weather.skipped, errors: weather.errors },
     rescored: rescore.rescored,
     rescore_errors: rescore.errors,
   };
