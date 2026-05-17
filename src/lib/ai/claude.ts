@@ -154,8 +154,10 @@ ${rawText}
 
 Extract every promotion on this page whose date is within ±14 days of the Reference date (i.e. within two weeks before or after). Skip every promotion outside that window — they're either historical or far in the future and waste output tokens. Return a JSON array.
 
+EXTRACT EVERY PROMOTION YOU SEE. If a date has multiple promos (a giveaway AND a theme night AND a value game), return them as separate entries — never collapse them into one. If a date is labeled with any branded recurring event ("313 Value Game", "Tuesday Tee Drops", "Friday Night Fireworks", "Orange Friday", "Motor City Monday", "Bark in the Park", etc.), that IS a promotion — return it. Do not skip an entry just because it doesn't fit a perfect type bucket.
+
 Each promotion must have:
-- promo_type: one of "giveaway", "theme_night", "fireworks", "special_ticket", "family_promo", "food_bev_promo"
+- promo_type: one of "giveaway", "theme_night", "fireworks", "special_ticket", "family_promo", "food_bev_promo", "value_game". Use "value_game" for any branded discount / value night (e.g. "313 Value Game", "$3 Tuesdays", "Half-Price Hot Dogs", "Kids Eat Free"). Use "theme_night" for branded recurring events that don't fit anywhere else ("Orange Friday", "Tuesday Tee Drops", heritage / pride / military nights). When in doubt between two types, pick the closest fit rather than skipping.
 - promo_item: the specific item exactly as named on the page (e.g., "T-shirt", "bobblehead", "rally towel", "acrylic mini court"). Null only if no item is mentioned (e.g., a theme night with no giveaway).
 - description: a clean one-sentence description that pulls ONLY from the text adjacent to this specific date. Do NOT mix in details from other dates.
 - date: YYYY-MM-DD. Required. Promo pages often write dates without a year (e.g. "Sunday, May 10" or "May 10 vs. Braves"). When a year is missing, infer it from the Reference date provided above (use the same year). The combination of month + day + day-of-week is unambiguous within a season. Set to null ONLY if the page truly has no date at all for this promo (rare).
