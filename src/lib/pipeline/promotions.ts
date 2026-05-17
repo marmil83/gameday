@@ -227,11 +227,32 @@ async function scrapePageText(url: string, targetDate?: string): Promise<string 
 }
 
 /**
- * Scrape and extract promotions for all games of a team on a given date
+ * Scrape + extract promotions for a team across MULTIPLE target dates
+ * in a single pass.
+ *
+ * The previous per-date implementation hit two compounding problems:
+ *   1. Haiku is stochastic — given the same source text, two calls for
+ *      different target dates returned different sets. A "313 Value
+ *      Game" the model captured cleanly for Wed May 20 was silently
+ *      missed when the call asked specifically about Tue May 19, even
+ *      though both dates' content was in the same page.
+ *   2. Cost: 5 dates × per-team puppeteer launches × per-team Haiku
+ *      calls = a lot of wasted work for source pages that change at
+ *      most twice a day.
+ *
+ * Now: scrape the page(s) ONCE per team per pipeline run, call Haiku
+ * ONCE for the whole window, then dispatch the returned promos to
+ * matching games by date. Cuts the per-team API cost ~5×, and Haiku
+ * sees every date in the window at once so the "missed item on one
+ * date but caught on another" inconsistency disappears.
+ *
+ * Per-date wipe-and-rewrite safety from the previous fix is preserved:
+ * a date with zero extracted promos keeps its existing rows rather
+ * than getting wiped.
  */
 export async function scrapePromotionsForTeam(
   team: Team,
-  targetDate: string // YYYY-MM-DD
+  targetDates: string[] // YYYY-MM-DD, sorted ascending
 ): Promise<{
   extracted: number;
   errors: string[];
@@ -242,13 +263,14 @@ export async function scrapePromotionsForTeam(
   if (!team.promo_page_url) {
     return { extracted: 0, errors: ['No promo page URL configured'] };
   }
+  if (targetDates.length === 0) {
+    return { extracted: 0, errors: [] };
+  }
 
-  // OPTIMIZATION: query for matching home games FIRST (cheap, just DB),
-  // and bail before doing any expensive work if nothing matches. The
-  // pipeline scrapes 7 dates × all teams twice daily; most team-date
-  // combos don't have a game on the target date. Previously we were
-  // running an HTTP fetch + AI call for every empty combo. This guard
-  // alone cuts ~60-70% of Anthropic spend.
+  // OPTIMIZATION: pull all home games in the entire window in a single
+  // query, then filter by city-local date. Skip the rest if no game
+  // exists on any of the target dates — avoids puppeteer + AI for empty
+  // weeks.
   const { data: city } = await supabase
     .from('cities')
     .select('timezone')
@@ -260,39 +282,44 @@ export async function scrapePromotionsForTeam(
   });
   const startTimeToLocalDate = (iso: string) => localFmt.format(new Date(iso));
 
-  // Pull games in a generous ±36h window around targetDate, then filter by
-  // the team's local date so we get exactly the games belonging to that
-  // local calendar day. Promo pages display dates as the team writes them
-  // (always local), so matching must happen in the team's TZ.
-  const targetMs = new Date(`${targetDate}T12:00:00Z`).getTime();
-  const windowStart = new Date(targetMs - 36 * 3_600_000).toISOString();
-  const windowEnd = new Date(targetMs + 36 * 3_600_000).toISOString();
+  // Window: first target date - 36h to last target date + 36h. The
+  // ±36h cushion covers timezone edge cases and game-day cross-overs.
+  const firstDateMs = new Date(`${targetDates[0]}T12:00:00Z`).getTime();
+  const lastDateMs = new Date(`${targetDates[targetDates.length - 1]}T12:00:00Z`).getTime();
+  const windowStart = new Date(firstDateMs - 36 * 3_600_000).toISOString();
+  const windowEnd = new Date(lastDateMs + 36 * 3_600_000).toISOString();
   const { data: rawGames } = await supabase
     .from('games')
     .select('id, start_time')
     .eq('home_team_id', team.id)
     .gte('start_time', windowStart)
     .lte('start_time', windowEnd);
-  const games = (rawGames || []).filter(g => startTimeToLocalDate(g.start_time) === targetDate);
-
-  // Early exit — saves the HTTP fetch and the AI call.
-  if (games.length === 0) {
+  // Index games by their city-local date so we can match each extracted
+  // promo to the right game in O(1) without re-querying per date.
+  const gamesByDate = new Map<string, string>();
+  for (const g of rawGames || []) {
+    const d = startTimeToLocalDate(g.start_time);
+    if (!gamesByDate.has(d)) gamesByDate.set(d, g.id);
+  }
+  const datesWithGames = targetDates.filter(d => gamesByDate.has(d));
+  if (datesWithGames.length === 0) {
     return { extracted: 0, errors: [] };
   }
 
-  // Promo content for some teams now lives across MULTIPLE pages (e.g.
-  // MLB split the old single `/tickets/promotions` page into separate
-  // `/promotions/giveaways` and `/specials/events` subsections — one
-  // covers bobbleheads / t-shirts, the other covers theme nights /
-  // fireworks / value games). Support a comma-separated list of URLs in
-  // promo_page_url; we fetch each, concatenate the text, and pass the
-  // combined corpus to the AI as one block. Single-URL configs are the
-  // common case and work unchanged.
+  // Promo content for some teams lives across MULTIPLE pages (e.g. MLB
+  // split the old single `/tickets/promotions` page into separate
+  // `/promotions/giveaways`, `/specials/events`, and `/single-game-tickets`).
+  // Support a comma-separated list of URLs in promo_page_url; we fetch
+  // each, concatenate the text, and pass the combined corpus to the AI
+  // as one block. Single-URL configs (most teams) work unchanged.
+  //
+  // Slice anchor is the EARLIEST target date so the focused text window
+  // extends forward from there and covers every date we care about.
   const urls = team.promo_page_url.split(',').map(u => u.trim()).filter(Boolean);
-  const sourceUrl = urls[0]; // primary URL for persistence + error messages
+  const sourceUrl = urls[0];
   const textChunks: string[] = [];
   for (const u of urls) {
-    const chunk = await scrapePageText(u, targetDate);
+    const chunk = await scrapePageText(u, datesWithGames[0]);
     if (chunk) textChunks.push(chunk);
   }
   if (textChunks.length === 0) {
@@ -300,79 +327,72 @@ export async function scrapePromotionsForTeam(
   }
   const rawText = textChunks.join('\n\n--- next page ---\n\n');
 
-  const promotions = await extractPromotions(rawText, team.name, targetDate);
+  // ONE Haiku call for the whole window. Reference date is the FIRST
+  // target date — the prompt's "±14 days" window covers every other
+  // target date naturally.
+  const allPromos = await extractPromotions(rawText, team.name, datesWithGames[0]);
 
-  // Strict date match BEFORE touching the DB. AI hallucinations that
-  // conflate items across dates get dropped; null-date entries get
-  // dropped (no way to verify they belong to this game).
-  const matchingPromos = promotions.filter(p => p.date === targetDate);
-
-  // SAFETY: only wipe the prior AI-extracted rows when we have at least
-  // one new row to replace them with. A transient extraction failure
-  // (Haiku is stochastic — it sometimes returns 0 for a date whose
-  // promos it returned cleanly on the previous run) used to wipe
-  // last-known-good data and leave the game with NO promos. Now: keep
-  // the existing rows when extraction returns nothing for this date.
-  //
-  // Admin-verified rows are always preserved regardless.
-  //
-  // NB: select-then-delete-by-id pattern. Combining `.in('game_id', [...])`
-  // with `.eq()` boolean filters in a single .delete() chain silently
-  // matched 0 rows in our Supabase build — likely a PostgREST quirk with
-  // multi-condition deletes. Selecting first sidesteps it.
-  if (matchingPromos.length > 0) {
-    const matchedGameIds = games.map(g => g.id);
-    const { data: stale } = await supabase
-      .from('promotions')
-      .select('id')
-      .in('game_id', matchedGameIds)
-      .eq('is_ai_extracted', true)
-      .eq('is_admin_verified', false);
-    for (const row of stale || []) {
-      const { error: delErr } = await supabase.from('promotions').delete().eq('id', row.id);
-      if (delErr) errors.push(`Failed to clear promo ${row.id}: ${delErr.message}`);
-    }
-  } else {
-    console.log(`[Promo Scrape] ${team.short_name} ${targetDate}: 0 promos extracted — preserving existing rows (no wipe).`);
+  // Bucket extracted promos by their attributed date.
+  const promosByDate = new Map<string, typeof allPromos>();
+  for (const p of allPromos) {
+    if (!p.date) continue; // null-date entries are unverifiable, drop
+    const bucket = promosByDate.get(p.date) ?? [];
+    bucket.push(p);
+    promosByDate.set(p.date, bucket);
   }
 
-  let extracted = 0;
+  let totalExtracted = 0;
+  for (const date of datesWithGames) {
+    const matchingPromos = promosByDate.get(date) ?? [];
+    const gameId = gamesByDate.get(date)!;
 
-  for (const promo of matchingPromos) {
-    // For MVP, assume one home game per team per day, so the matched game
-    // is unambiguous after the date filter.
-    const matchedGame = games[0];
-
-    const { error } = await supabase.from('promotions').insert({
-      game_id: matchedGame.id,
-      source_url: sourceUrl,
-      raw_text: rawText.slice(0, 2000), // Store truncated raw text
-      promo_type: promo.promo_type,
-      promo_item: promo.promo_item,
-      promo_description: promo.description,
-      special_ticket_required: promo.special_ticket_required,
-      eligibility_details: promo.eligibility_details,
-      confidence_score: promo.confidence_score,
-      is_ai_extracted: true,
-      is_admin_verified: false,
-    });
-
-    if (error) {
-      errors.push(`Failed to insert promo: ${error.message}`);
+    // SAFETY: only wipe prior AI-extracted rows for this date when we
+    // have at least one new row to replace them with. Empty result
+    // preserves last-known-good data.
+    if (matchingPromos.length > 0) {
+      const { data: stale } = await supabase
+        .from('promotions')
+        .select('id')
+        .eq('game_id', gameId)
+        .eq('is_ai_extracted', true)
+        .eq('is_admin_verified', false);
+      for (const row of stale || []) {
+        const { error: delErr } = await supabase.from('promotions').delete().eq('id', row.id);
+        if (delErr) errors.push(`Failed to clear promo ${row.id}: ${delErr.message}`);
+      }
     } else {
-      extracted++;
+      console.log(`[Promo Scrape] ${team.short_name} ${date}: 0 promos extracted — preserving existing rows.`);
+    }
+
+    for (const promo of matchingPromos) {
+      const { error } = await supabase.from('promotions').insert({
+        game_id: gameId,
+        source_url: sourceUrl,
+        raw_text: rawText.slice(0, 2000),
+        promo_type: promo.promo_type,
+        promo_item: promo.promo_item,
+        promo_description: promo.description,
+        special_ticket_required: promo.special_ticket_required,
+        eligibility_details: promo.eligibility_details,
+        confidence_score: promo.confidence_score,
+        is_ai_extracted: true,
+        is_admin_verified: false,
+      });
+      if (error) errors.push(`Failed to insert promo: ${error.message}`);
+      else totalExtracted++;
     }
   }
 
-  return { extracted, errors };
+  return { extracted: totalExtracted, errors };
 }
 
 /**
- * Scrape promotions for all teams in a city
+ * Scrape promotions for all teams in a city for a window of dates.
+ * Each team is scraped + AI-extracted ONCE for the whole window.
  */
 export async function scrapePromotionsForCity(
   cityId: string,
-  targetDate: string
+  targetDates: string[]
 ): Promise<{
   total_extracted: number;
   errors: string[];
@@ -390,7 +410,7 @@ export async function scrapePromotionsForCity(
   const allErrors: string[] = [];
 
   for (const team of teams as Team[]) {
-    const result = await scrapePromotionsForTeam(team, targetDate);
+    const result = await scrapePromotionsForTeam(team, targetDates);
     totalExtracted += result.extracted;
     allErrors.push(...result.errors.map(e => `${team.short_name}: ${e}`));
   }

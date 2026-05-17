@@ -86,23 +86,26 @@ export async function runPipelineForCity(cityId: string): Promise<PipelineResult
   // Step 2: Scrape promotions for the next 5 days (matches ingestion window).
   // Dates are generated in the CITY's local timezone — promo pages list dates
   // as the team writes them (always local), so we must match in the same frame.
+  //
+  // One call per team for the whole window — scrapePromotionsForCity batches
+  // the dates internally. Previously we looped 5 dates × N teams which meant
+  // 5 puppeteer launches and 5 Haiku calls per team. Now each team scrapes
+  // and extracts once, and the AI sees every date at once — eliminates the
+  // "missed on date X, caught on date Y" stochasticity that hid items like
+  // the Tigers "313 Value Game".
   console.log(`[Pipeline] Step 2: Scraping promotions for city ${cityId}`);
-  let totalPromoExtracted = 0;
-  const promoErrors: string[] = [];
   const { data: cityRow } = await supabase.from('cities').select('timezone').eq('id', cityId).single();
   const cityTz = cityRow?.timezone || 'America/New_York';
   const localFmt = new Intl.DateTimeFormat('en-CA', {
     timeZone: cityTz, year: 'numeric', month: '2-digit', day: '2-digit',
   });
+  const targetDates: string[] = [];
   for (let i = 0; i < 5; i++) {
     const d = new Date();
     d.setDate(d.getDate() + i);
-    const dateStr = localFmt.format(d); // local YYYY-MM-DD for this city
-    const result = await scrapePromotionsForCity(cityId, dateStr);
-    totalPromoExtracted += result.total_extracted;
-    promoErrors.push(...result.errors);
+    targetDates.push(localFmt.format(d));
   }
-  const promoResult = { total_extracted: totalPromoExtracted, errors: promoErrors };
+  const promoResult = await scrapePromotionsForCity(cityId, targetDates);
   allErrors.push(...promoResult.errors);
 
   // Step 3: Enrich games (AI + scoring).
