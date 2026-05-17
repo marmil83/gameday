@@ -302,39 +302,43 @@ export async function scrapePromotionsForTeam(
 
   const promotions = await extractPromotions(rawText, team.name, targetDate);
 
-  // Make this scrape IDEMPOTENT — wipe any prior AI-extracted promos for
-  // these games before writing fresh ones. Without this, every twice-daily
-  // scrape was appending duplicates AND stale data from buggy past runs
-  // (e.g. dates Claude attributed wrong) lingered forever. Admin-verified
-  // promos are preserved.
+  // Strict date match BEFORE touching the DB. AI hallucinations that
+  // conflate items across dates get dropped; null-date entries get
+  // dropped (no way to verify they belong to this game).
+  const matchingPromos = promotions.filter(p => p.date === targetDate);
+
+  // SAFETY: only wipe the prior AI-extracted rows when we have at least
+  // one new row to replace them with. A transient extraction failure
+  // (Haiku is stochastic — it sometimes returns 0 for a date whose
+  // promos it returned cleanly on the previous run) used to wipe
+  // last-known-good data and leave the game with NO promos. Now: keep
+  // the existing rows when extraction returns nothing for this date.
+  //
+  // Admin-verified rows are always preserved regardless.
   //
   // NB: select-then-delete-by-id pattern. Combining `.in('game_id', [...])`
   // with `.eq()` boolean filters in a single .delete() chain silently
   // matched 0 rows in our Supabase build — likely a PostgREST quirk with
   // multi-condition deletes. Selecting first sidesteps it.
-  const matchedGameIds = games.map(g => g.id);
-  const { data: stale } = await supabase
-    .from('promotions')
-    .select('id')
-    .in('game_id', matchedGameIds)
-    .eq('is_ai_extracted', true)
-    .eq('is_admin_verified', false);
-  for (const row of stale || []) {
-    const { error: delErr } = await supabase.from('promotions').delete().eq('id', row.id);
-    if (delErr) errors.push(`Failed to clear promo ${row.id}: ${delErr.message}`);
+  if (matchingPromos.length > 0) {
+    const matchedGameIds = games.map(g => g.id);
+    const { data: stale } = await supabase
+      .from('promotions')
+      .select('id')
+      .in('game_id', matchedGameIds)
+      .eq('is_ai_extracted', true)
+      .eq('is_admin_verified', false);
+    for (const row of stale || []) {
+      const { error: delErr } = await supabase.from('promotions').delete().eq('id', row.id);
+      if (delErr) errors.push(`Failed to clear promo ${row.id}: ${delErr.message}`);
+    }
+  } else {
+    console.log(`[Promo Scrape] ${team.short_name} ${targetDate}: 0 promos extracted — preserving existing rows (no wipe).`);
   }
 
   let extracted = 0;
 
-  for (const promo of promotions) {
-    // Strict date match — protects against AI hallucinations that conflate
-    // items across dates. If the AI extracted a date and it doesn't match
-    // the target, drop the row. Null dates are also dropped (no way to
-    // verify they belong to this game).
-    if (promo.date !== targetDate) {
-      continue;
-    }
-
+  for (const promo of matchingPromos) {
     // For MVP, assume one home game per team per day, so the matched game
     // is unambiguous after the date filter.
     const matchedGame = games[0];
