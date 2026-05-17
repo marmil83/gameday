@@ -473,51 +473,85 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
         </div>
       )}
 
-      {/* Header: Teams + Score */}
-      <div className={`px-6 ${callout ? 'pt-3' : 'pt-5'} pb-4`}>
+      {/* HERO — the matchup is the visual center of the card now.
+          Soft team-color gradient sets the mood, both team logos are
+          large and centered (was: small home-only logo at top-left).
+          Score circle stays in the top-right for instant scanability.
+          This is the single biggest design move toward the "feels like
+          a sports app, not a spreadsheet" goal. */}
+      <div
+        className={`relative px-6 ${callout ? 'pt-3' : 'pt-5'} pb-5`}
+        style={{ background: `linear-gradient(180deg, ${accent}1f 0%, ${accent}05 60%, transparent 100%)` }}
+      >
+        {/* Top row: league + date pill (left), deal score (right) */}
         <div className="flex items-start justify-between gap-4">
-
-          {/* Team info */}
-          <div className="flex items-start gap-3 flex-1 min-w-0">
-            {home_team_logo && (
-              <img
-                src={home_team_logo}
-                alt={game.home_team_name}
-                className="w-11 h-11 object-contain shrink-0 mt-1"
-              />
-            )}
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium tracking-wider uppercase" style={{ color: '#aeaeb2' }}>
-                {game.league} · {formatDate(game.start_time, timezone)}
-              </p>
-              <h3 className="mt-1 text-xl font-bold tracking-tight leading-tight" style={{ color: '#1d1d1f' }}>
-                {game.away_team_name === 'TBD'
-                  ? <span style={{ color: '#aeaeb2', fontStyle: 'italic' }}>Opponent TBD</span>
-                  : game.away_team_name}
-              </h3>
-              <p className="text-sm mt-0.5" style={{ color: '#86868b' }}>
-                @ {game.home_team_name} · {formatTime(game.start_time, timezone)}
-              </p>
-              <p className="text-xs mt-0.5" style={{ color: '#aeaeb2' }}>{game.venue}</p>
-            </div>
-          </div>
-
-          {/* Deal Score — clean black circle */}
+          <p className="text-[11px] font-semibold tracking-[0.08em] uppercase pt-1.5" style={{ color: '#6e6e73' }}>
+            {game.league} · {formatDate(game.start_time, timezone)}
+          </p>
           <button
             onClick={() => setShowBreakdown(!showBreakdown)}
             className="flex flex-col items-center shrink-0"
             aria-label="Show score breakdown"
           >
             <div
-              className="w-14 h-14 rounded-full flex items-center justify-center transition-transform duration-150 active:scale-95"
+              className="w-14 h-14 rounded-full flex items-center justify-center transition-transform duration-150 active:scale-95 shadow-sm"
               style={{ background: '#1d1d1f' }}
             >
               <span className="text-lg font-bold text-white">{dealScore.toFixed(1)}</span>
             </div>
-            <span className="text-[10px] font-medium mt-1.5" style={{ color: '#86868b' }}>
+            <span className="text-[10px] font-medium mt-1.5" style={{ color: '#6e6e73' }}>
               {getDealScoreLabel(dealScore)}
             </span>
           </button>
+        </div>
+
+        {/* Hero logos — away · @ · home, both prominent. Home is slightly
+            larger because it's the home team (the focal team for the card)
+            and the asymmetry creates a natural reading flow. */}
+        <div className="flex items-center justify-center gap-5 pt-4">
+          {away_team_logo ? (
+            <img
+              src={away_team_logo}
+              alt={game.away_team_name}
+              className="w-14 h-14 object-contain"
+            />
+          ) : (
+            <div
+              className="w-14 h-14 rounded-full flex items-center justify-center text-xs font-bold"
+              style={{ background: 'rgba(255,255,255,0.6)', color: '#6e6e73' }}
+            >
+              {game.away_team_name === 'TBD' ? 'TBD' : game.away_team_name.charAt(0)}
+            </div>
+          )}
+          <span className="text-sm font-medium" style={{ color: '#6e6e73' }}>@</span>
+          {home_team_logo ? (
+            <img
+              src={home_team_logo}
+              alt={game.home_team_name}
+              className="w-16 h-16 object-contain"
+            />
+          ) : (
+            <div
+              className="w-16 h-16 rounded-full flex items-center justify-center text-sm font-bold"
+              style={{ background: 'rgba(255,255,255,0.6)', color: '#6e6e73' }}
+            >
+              {game.home_team_name.charAt(0)}
+            </div>
+          )}
+        </div>
+
+        {/* Matchup name + time + venue, centered below the logos */}
+        <div className="text-center mt-4">
+          <h3 className="text-base font-bold tracking-tight leading-tight" style={{ color: '#1d1d1f' }}>
+            {game.away_team_name === 'TBD'
+              ? <span style={{ color: '#aeaeb2', fontStyle: 'italic' }}>Opponent TBD</span>
+              : game.away_team_name}
+            <span style={{ color: '#86868b', fontWeight: 400 }}> @ </span>
+            {game.home_team_name}
+          </h3>
+          <p className="text-xs mt-1" style={{ color: '#6e6e73' }}>
+            {formatTime(game.start_time, timezone)} · {game.venue}
+          </p>
         </div>
       </div>
 
