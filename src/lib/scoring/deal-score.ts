@@ -149,6 +149,14 @@ function calculateExperienceScore(
         score += 1;
         highlights.push('special ticket package');
         break;
+      case 'value_game':
+        // Branded discount nights (313 Value Game, $3 Tuesdays, etc.) —
+        // discounted concessions for the whole crowd. Same weight as
+        // food_bev_promo since both reduce in-stadium spend, but always
+        // surface the item name so the reasoning explains the boost.
+        score += 1.5;
+        highlights.push(promo.promo_item || 'value game');
+        break;
       default:
         score += 1;
     }

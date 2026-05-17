@@ -4,7 +4,7 @@
 export type PricingTransparency = 'all_in_verified' | 'estimated_with_fees' | 'base_price_only';
 export type GameStatus = 'scheduled' | 'live' | 'final' | 'postponed' | 'cancelled';
 export type PipelineStatus = 'pending' | 'enriched' | 'reviewed' | 'published';
-export type PromoType = 'giveaway' | 'theme_night' | 'fireworks' | 'special_ticket' | 'family_promo' | 'food_bev_promo';
+export type PromoType = 'giveaway' | 'theme_night' | 'fireworks' | 'special_ticket' | 'family_promo' | 'food_bev_promo' | 'value_game';
 export type EffortLevel = 'easy' | 'moderate' | 'high_effort';
 export type SourceType = 'ai' | 'admin' | 'rule';
 export type LeagueLevel = 'major' | 'minor';
