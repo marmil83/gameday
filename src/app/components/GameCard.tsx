@@ -4,7 +4,6 @@ import { useState } from 'react';
 import type { GameCard as GameCardType, PricingSnapshot } from '@/types/database';
 import { PRICING_LABELS } from '@/lib/constants';
 import { getVenueLogistics } from '@/lib/venues';
-import { teamColor } from '@/lib/team-colors';
 
 // Display registry for ticket sources we actively pull live prices from.
 // Sources without live data + an affiliate program don't appear in the
@@ -388,21 +387,17 @@ function getCalloutBanner(
   // contexts first. Bad weather lives at the bottom — it's the only
   // negative signal so it never trumps a positive one (e.g. a Game 7
   // in the rain still reads as "Game 7").
-  // Severe / high-stakes contexts: kept clean (no emoji) — the words
-  // already carry weight, and slapping an emoji on "Elimination" reads
-  // as flippant. Lower-stakes / friendlier labels get a single tasteful
-  // emoji and a punchier verb where it fits ("Steal" > "Value Game").
   if (contextFlags.includes('game-7'))            return { text: 'Game 7', accent: '#ff3b30' };
-  if (contextFlags.includes('elimination'))       return { text: 'Elimination', accent: '#ff3b30' };
+  if (contextFlags.includes('elimination'))       return { text: 'Elimination Game', accent: '#ff3b30' };
   if (contextFlags.includes('series-finale'))     return { text: 'Series Finale', accent: '#ff3b30' };
   if (contextFlags.includes('finals'))            return { text: 'Finals', accent: '#ff3b30' };
   if (contextFlags.includes('conference-finals')) return { text: 'Conference Finals', accent: '#ff9500' };
-  if (contextFlags.includes('playoff'))           return { text: 'Playoff', accent: '#ff9500' };
-  if (contextFlags.includes('rivalry'))           return { text: 'Rivalry ⚔️', accent: '#af52de' };
-  if (contextFlags.includes('doubleheader'))      return { text: 'Doubleheader ×2', accent: '#5856d6' };
-  if (contextFlags.includes('opening-day'))       return { text: 'Opening Day 🎉', accent: '#0071e3' };
-  if (priceScore >= 9 || tagNames.includes('cheap-night')) return { text: 'Steal 💸', accent: '#34c759' };
-  if (contextFlags.includes('bad-weather'))       return { text: 'Weather Watch ☔', accent: '#bf6900' };
+  if (contextFlags.includes('playoff'))           return { text: 'Playoff Game', accent: '#ff9500' };
+  if (contextFlags.includes('rivalry'))           return { text: 'Rivalry Game', accent: '#af52de' };
+  if (contextFlags.includes('doubleheader'))      return { text: 'Doubleheader', accent: '#5856d6' };
+  if (contextFlags.includes('opening-day'))       return { text: 'Opening Day', accent: '#0071e3' };
+  if (priceScore >= 9 || tagNames.includes('cheap-night')) return { text: 'Value Game', accent: '#34c759' };
+  if (contextFlags.includes('bad-weather'))       return { text: 'Weather Concern', accent: '#bf6900' };
   return null;
 }
 
@@ -447,23 +442,12 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
       };
     });
 
-  // Home-team brand color. Painted as a thin top accent bar so the card
-  // reads as "about this team" at a glance — Tigers cards feel navy,
-  // Thorns red, Timbers forest green, etc. Falls back to neutral grey
-  // for teams not in the color map (additive, never visually broken).
-  const accent = teamColor(game.home_team_name);
-
   return (
     <div
       className="bg-white overflow-hidden transition-all duration-200"
       style={{ borderRadius: '20px', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}
     >
-      {/* Team accent bar — thin strip of home team's brand color across
-          the top of the card. 4px is enough to register colour without
-          becoming a banner. */}
-      <div style={{ background: accent, height: '4px' }} aria-hidden="true" />
-
-      {/* Callout — thin accent bar (severity / context), not a banner */}
+      {/* Callout — thin accent bar, not a banner */}
       {callout && (
         <div className="flex items-center gap-2 px-6 pt-4">
           <div className="w-1 h-4 rounded-full shrink-0" style={{ background: callout.accent }} />
@@ -474,7 +458,7 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
       )}
 
       {/* Header: Teams + Score */}
-      <div className={`px-6 ${callout ? 'pt-3' : 'pt-5'} pb-4`}>
+      <div className={`px-6 ${callout ? 'pt-3' : 'pt-6'} pb-4`}>
         <div className="flex items-start justify-between gap-4">
 
           {/* Team info */}
