@@ -84,6 +84,11 @@ function calcExperienceScore(
       case 'family_promo': score += 1.5; highlights.push('family promo'); break;
       case 'food_bev_promo': score += 1.5; highlights.push('food/drink deal'); break;
       case 'special_ticket': score += 1; highlights.push('special ticket package'); break;
+      // Branded discount nights (313 Value Game, $3 Tuesdays, etc.) —
+      // discounted concessions for the whole crowd. Same weight as
+      // food_bev_promo. Mirrors the case in deal-score.ts; rescore.ts
+      // has its own inline copy of this function rather than importing.
+      case 'value_game': score += 1.5; highlights.push(p.promo_item || 'value game'); break;
       default: score += 1;
     }
   }
