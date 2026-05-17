@@ -331,8 +331,35 @@ Tone guidance for this game: ${verdictGuidance}
 
 Return the JSON now.`;
 
+  // Model selection: route HIGH-STAKES games to Sonnet (where voice and
+  // nuance matter — playoffs, rivalries, openers, anything where the
+  // verdict copy needs to feel earned) and STANDARD games to Haiku
+  // (~3× cheaper, more than capable of writing a 2-sentence verdict
+  // for a regular-season Tuesday Tigers vs Guardians game).
+  //
+  // Conservative bias: any signal that the game is worth heightened
+  // attention (playoffs, elimination/finals, rivalry, true home opener,
+  // or series-state uncertainty that needs careful conditional copy)
+  // routes to Sonnet. Everything else gets Haiku. ~60-80% of regular-
+  // season games qualify as standard, so expected enrichment cost
+  // drops ~50-65%.
+  //
+  // The deterministic price/opener scrubs and the existing
+  // angle-separation check in the prompt keep Haiku honest — if it
+  // sneaks a dollar amount or "season opener" line in, the scrubs
+  // strip it the same way they handled Sonnet leaks.
+  const isMarquee = !!(
+    context.isPlayoffs ||
+    context.isElimination ||
+    context.isFinals ||
+    context.isRivalry ||
+    context.isOpeningDay ||
+    context.seriesUncertain
+  );
+  const model = isMarquee ? 'claude-sonnet-4-20250514' : 'claude-haiku-4-5';
+
   const response = await callClaudeWithRetry({
-    model: 'claude-sonnet-4-20250514',
+    model,
     max_tokens: 1500,
     system: [
       { type: 'text', text: system, cache_control: { type: 'ephemeral' } },
