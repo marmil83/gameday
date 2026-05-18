@@ -62,6 +62,19 @@ const VENUE_COORDS: Record<string, { lat: number; lon: number }> = {
   'SoFi Stadium': { lat: 33.953, lon: -118.339 },
   'Dignity Health Sports Park': { lat: 33.864, lon: -118.261 },
   'BMO Stadium': { lat: 34.012, lon: -118.185 },
+  // New York / NJ — all NYC-market venues, outdoor first then indoor.
+  // Indoor venues are included so the venue lookup never silently misses
+  // a team (weather just won't be used for indoor games; this keeps the
+  // logs clean).
+  'Yankee Stadium': { lat: 40.829, lon: -73.926 },
+  'Citi Field': { lat: 40.757, lon: -73.846 },
+  'MetLife Stadium': { lat: 40.814, lon: -74.074 },
+  'Red Bull Arena': { lat: 40.736, lon: -74.150 },
+  'Sports Illustrated Stadium': { lat: 40.736, lon: -74.150 }, // formerly Red Bull Arena — same venue
+  'Madison Square Garden': { lat: 40.750, lon: -73.993 },
+  'Barclays Center': { lat: 40.683, lon: -73.975 },
+  'UBS Arena': { lat: 40.696, lon: -73.703 },
+  'Prudential Center': { lat: 40.733, lon: -74.171 },
 };
 
 function celsiusToFahrenheit(c: number): number {
