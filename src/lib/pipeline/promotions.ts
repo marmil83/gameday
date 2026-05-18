@@ -37,7 +37,7 @@ function needsBrowserRendering(url: string): boolean {
  * gets a fresh Node process, so leaking would self-resolve, but we
  * close explicitly anyway — keeps memory usage predictable.
  */
-type PuppeteerBrowser = Awaited<ReturnType<Awaited<ReturnType<typeof loadPuppeteer>>['launch']>>;
+export type PuppeteerBrowser = Awaited<ReturnType<Awaited<ReturnType<typeof loadPuppeteer>>['launch']>>;
 let browserPromise: Promise<PuppeteerBrowser> | null = null;
 
 async function loadPuppeteer() {
@@ -50,7 +50,10 @@ async function loadPuppeteer() {
   return puppeteer;
 }
 
-async function getBrowser(): Promise<PuppeteerBrowser> {
+// Exported so sibling pipeline modules (tickpick.ts, future scrapers)
+// can reuse the same shared headless-Chrome instance — launching is the
+// expensive step, and one launch per pipeline beats one per scraper.
+export async function getBrowser(): Promise<PuppeteerBrowser> {
   if (browserPromise) return browserPromise;
   browserPromise = (async () => {
     const puppeteer = await loadPuppeteer();
