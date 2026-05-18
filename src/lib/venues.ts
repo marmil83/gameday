@@ -96,6 +96,44 @@ const VENUE_LOGISTICS: Record<string, VenueLogistics> = {
     parking: { typical: 25, range: '20-30' },
     transit: { available: true, rating: 'limited', notes: 'Bus from Carson Metro station' },
   },
+
+  // ── New York / NJ area ────────────────────────────────────────────────
+  'Yankee Stadium': {
+    parking: { typical: 40, range: '30-50' },
+    transit: { available: true, rating: 'excellent', notes: '4/B/D trains to 161st St (door)' },
+  },
+  'Citi Field': {
+    parking: { typical: 28, range: '25-35' },
+    transit: { available: true, rating: 'excellent', notes: '7 train to Mets-Willets Point (door)' },
+  },
+  'Madison Square Garden': {
+    parking: { typical: 50, range: '40-65' },
+    transit: { available: true, rating: 'excellent', notes: 'Penn Station beneath (1/2/3/A/C/E + LIRR/NJT)' },
+  },
+  'Barclays Center': {
+    parking: { typical: 35, range: '25-50' },
+    transit: { available: true, rating: 'excellent', notes: 'Atlantic Ave-Barclays Ctr (2/3/4/5/B/D/N/Q/R)' },
+  },
+  'UBS Arena': {
+    parking: { typical: 30 },
+    transit: { available: true, rating: 'good', notes: 'LIRR Elmont-UBS Arena (game-day station)' },
+  },
+  'Prudential Center': {
+    parking: { typical: 25, range: '20-35' },
+    transit: { available: true, rating: 'excellent', notes: 'Newark Penn (NJT/PATH, 5-min walk)' },
+  },
+  'MetLife Stadium': {
+    parking: { typical: 50, range: '40-65' },
+    transit: { available: true, rating: 'limited', notes: 'NJT Meadowlands Rail Line on event days only' },
+  },
+  'Red Bull Arena': {
+    parking: { typical: 18, range: '15-25' },
+    transit: { available: true, rating: 'excellent', notes: 'PATH to Harrison (5-min walk)' },
+  },
+  'Sports Illustrated Stadium': {
+    parking: { typical: 18, range: '15-25' },
+    transit: { available: true, rating: 'excellent', notes: 'PATH to Harrison (5-min walk)' }, // same venue as Red Bull Arena, renamed 2024
+  },
 };
 
 export function getVenueLogistics(venueName: string | null | undefined): VenueLogistics | null {

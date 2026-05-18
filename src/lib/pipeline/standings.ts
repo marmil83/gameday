@@ -231,7 +231,7 @@ export async function updateStandings(): Promise<{ updated: number; errors: stri
     WNBA: wnba,
   };
 
-  const { data: teams, error: teamsError } = await supabase.from('teams').select('id, name, league, external_ids');
+  const { data: teams, error: teamsError } = await supabase.from('teams').select('id, name, league, external_ids, logo_url');
   if (teamsError || !teams) {
     return { updated: 0, errors: ['Failed to fetch teams from DB'] };
   }
@@ -241,7 +241,7 @@ export async function updateStandings(): Promise<{ updated: number; errors: stri
   const knownTeamNames = new Set((teams as Array<{ name: string }>).map(t => t.name.toLowerCase()));
 
   let updated = 0;
-  for (const team of teams as Array<{ id: string; name: string; league: string; external_ids: Record<string, unknown> | null }>) {
+  for (const team of teams as Array<{ id: string; name: string; league: string; external_ids: Record<string, unknown> | null; logo_url?: string | null }>) {
     const source = leagueMap[team.league];
     if (!source) continue; // AHL, WHL, USL — no free API yet
 
@@ -261,16 +261,25 @@ export async function updateStandings(): Promise<{ updated: number; errors: stri
       externalIds.ties = standings.ties;
     }
 
+    // Backfill logo_url only when missing — never overwrite a manually-set
+    // logo. Catches the case where a city is added via script with NULL
+    // logo_url and the standings feed already has the right CDN URL
+    // (MLB / NBA / NFL / NHL / MLS / NWSL / WNBA all expose team logos).
+    const updatePayload: Record<string, unknown> = {
+      wins: standings.wins,
+      losses: standings.losses,
+      win_pct: standings.winPct,
+      streak: standings.streak,
+      external_ids: externalIds,
+      standings_updated_at: new Date().toISOString(),
+    };
+    if (!team.logo_url && standings.logoUrl) {
+      updatePayload.logo_url = standings.logoUrl;
+    }
+
     const { error } = await supabase
       .from('teams')
-      .update({
-        wins: standings.wins,
-        losses: standings.losses,
-        win_pct: standings.winPct,
-        streak: standings.streak,
-        external_ids: externalIds,
-        standings_updated_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq('id', team.id);
 
     if (error) {
