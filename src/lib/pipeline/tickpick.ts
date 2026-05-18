@@ -52,7 +52,14 @@ function parseEventLinks(links: { href: string; text: string }[]): PriceResult[]
   };
   const results: PriceResult[] = [];
   for (const link of links) {
-    const dateMatch = link.text.match(/^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+(\d{1,2})\s/);
+    // TickPick's listing-link text starts with "MONTH-DAY-WEEKDAY" but
+    // their CSS-rendered text strips whitespace between them. So a link
+    // can read either "MAY 18 MON Tigers vs. Guardians..." (old layout,
+    // search page) or "MAY18MONMay 18Mon 6:40 pm..." (current layout,
+    // team page). Match both by making the inter-token whitespace
+    // optional. The 3-letter weekday after the day disambiguates from
+    // any number that happens to follow.
+    const dateMatch = link.text.match(/^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s*(\d{1,2})\s*(?:MON|TUE|WED|THU|FRI|SAT|SUN|\s)/);
     const priceMatch = link.text.match(/From \$(\d+)\+?/);
     if (dateMatch && priceMatch) {
       const month = months[dateMatch[1]];
