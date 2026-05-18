@@ -80,8 +80,39 @@ function formatDateForESPN(d: Date): string {
 }
 
 // ─────────────────────────────────────────────
-// ESPN scoreboard fetch (one call per league)
+// ESPN scoreboard fetch
+//
+// IMPORTANT: ESPN's scoreboard endpoint resolves playoff bracket
+// matchups inconsistently. A SINGLE-DATE query (?dates=20260519)
+// returns "Cleveland Cavaliers @ New York Knicks", but the equivalent
+// DATE-RANGE query (?dates=20260517-20260522) returns the same date
+// as "TBD @ TBD" because the bracket lookup only happens per-day.
+// Result: playoff home games for newer-bracket-position teams (Knicks
+// in 2026 playoffs) silently failed to ingest with the range query.
+//
+// Fix: fan out to one fetch per day in the window, in parallel.
+// ESPN is free + has no rate limit issues at this volume (one league
+// × 5 days = 5 parallel calls per league per city, ~25 calls per city
+// per pipeline run × 4 cities = ~100 calls). All fire concurrently
+// so wall-clock time stays near the single-range case.
 // ─────────────────────────────────────────────
+
+async function fetchESPNScoreboardSingleDay(
+  sport: string,
+  espnLeague: string,
+  date: Date,
+): Promise<unknown[]> {
+  const d = formatDateForESPN(date);
+  const url = `https://site.api.espn.com/apis/site/v2/sports/${sport}/${espnLeague}/scoreboard?dates=${d}&limit=200`;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.events as unknown[]) || [];
+  } catch {
+    return [];
+  }
+}
 
 async function fetchESPNScoreboard(
   sport: string,
@@ -89,18 +120,32 @@ async function fetchESPNScoreboard(
   startDate: Date,
   endDate: Date,
 ): Promise<any[]> {
-  const from = formatDateForESPN(startDate);
-  const to = formatDateForESPN(endDate);
-  const url = `https://site.api.espn.com/apis/site/v2/sports/${sport}/${espnLeague}/scoreboard?dates=${from}-${to}&limit=200`;
-
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.events || [];
-  } catch {
-    return [];
+  // Fan out per-day to dodge the date-range bracket-resolution bug.
+  const days: Date[] = [];
+  const cursor = new Date(startDate);
+  cursor.setHours(0, 0, 0, 0);
+  while (cursor <= endDate) {
+    days.push(new Date(cursor));
+    cursor.setDate(cursor.getDate() + 1);
   }
+
+  const perDay = await Promise.all(
+    days.map(d => fetchESPNScoreboardSingleDay(sport, espnLeague, d)),
+  );
+
+  // Deduplicate by ESPN event id — a game scheduled near midnight UTC
+  // can appear in two adjacent day queries.
+  const seen = new Set<string>();
+  const events: unknown[] = [];
+  for (const dayEvents of perDay) {
+    for (const e of dayEvents) {
+      const id = (e as { id?: string })?.id;
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      events.push(e);
+    }
+  }
+  return events as any[];
 }
 
 // ─────────────────────────────────────────────
