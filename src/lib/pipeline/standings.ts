@@ -30,15 +30,42 @@ interface StandingsData {
 async function fetchMLBStandings(): Promise<Map<string, StandingsData>> {
   const results = new Map<string, StandingsData>();
   try {
-    const res = await fetch('https://statsapi.mlb.com/api/v1/standings?leagueId=103,104&season=2026', {
-      signal: AbortSignal.timeout(10_000),
-    });
-    const data = await res.json();
-    for (const record of data.records || []) {
+    // MLB Stats API splits the data we need across two endpoints:
+    //   • /standings → wins/losses/streak/L10, keyed by SHORT name
+    //                  ("Yankees", "Tigers") + numeric id.
+    //   • /teams     → full names ("New York Yankees") + abbreviation
+    //                  ("NYY") + fileCode ("nyy"), keyed by id.
+    // Fetch both, join on id. Standings alone won't give us either the
+    // full name needed for matching or the abbreviation needed to build
+    // a working ESPN CDN logo URL.
+    const [standingsRes, teamsRes] = await Promise.all([
+      fetch('https://statsapi.mlb.com/api/v1/standings?leagueId=103,104&season=2026', { signal: AbortSignal.timeout(10_000) }),
+      fetch('https://statsapi.mlb.com/api/v1/teams?sportId=1&season=2026', { signal: AbortSignal.timeout(10_000) }),
+    ]);
+    const standingsData = await standingsRes.json();
+    const teamsData = await teamsRes.json();
+
+    // Build id → { fullName, fileCode } map from /teams
+    const teamById = new Map<number, { fullName: string; fileCode: string }>();
+    for (const t of teamsData.teams || []) {
+      if (t?.id && t?.name && t?.fileCode) {
+        teamById.set(t.id, { fullName: t.name, fileCode: t.fileCode });
+      }
+    }
+
+    for (const record of standingsData.records || []) {
       for (const t of record.teamRecords || []) {
         const last10 = (t.records?.splitRecords || []).find((s: { type: string }) => s.type === 'lastTen');
-        const teamId = t.team?.id;
-        results.set(t.team.name, {
+        const teamInfo = t.team?.id ? teamById.get(t.team.id) : null;
+        // Prefer the joined full name + fileCode-based logo URL. Fall
+        // back to the short name (and null logo) only when the /teams
+        // join misses — never happened in practice on the active MLB
+        // roster but guards against the API returning a partial list.
+        const name = teamInfo?.fullName ?? t.team.name;
+        const logoUrl = teamInfo?.fileCode
+          ? `https://a.espncdn.com/i/teamlogos/mlb/500/${teamInfo.fileCode}.png`
+          : null;
+        results.set(name, {
           wins: t.wins,
           losses: t.losses,
           winPct: parseFloat(t.winningPercentage) || 0,
@@ -46,8 +73,7 @@ async function fetchMLBStandings(): Promise<Map<string, StandingsData>> {
           ties: null,
           last10Wins: last10?.wins ?? null,
           last10Losses: last10?.losses ?? null,
-          // MLB API doesn't expose logo URL — use ESPN's MLB logo CDN by team id
-          logoUrl: teamId ? `https://a.espncdn.com/i/teamlogos/mlb/500/${teamId}.png` : null,
+          logoUrl,
         });
       }
     }
@@ -261,10 +287,16 @@ export async function updateStandings(): Promise<{ updated: number; errors: stri
       externalIds.ties = standings.ties;
     }
 
-    // Backfill logo_url only when missing — never overwrite a manually-set
-    // logo. Catches the case where a city is added via script with NULL
-    // logo_url and the standings feed already has the right CDN URL
-    // (MLB / NBA / NFL / NHL / MLS / NWSL / WNBA all expose team logos).
+    // Backfill / heal logo_url. Update conditions:
+    //  • when missing (initial population for newly-added teams)
+    //  • when the stored URL hits the legacy MLB-Stats-API-numeric-id
+    //    pattern (mlb/500/<digits>.png) — that ID space is ESPN's
+    //    INTERNAL id, not MLB Stats API's, so the numeric URL 404s for
+    //    every team. The ID→abbreviation switch above fixes new writes;
+    //    this heals existing rows on the next standings tick.
+    // Never overwrites an admin-set or otherwise-good URL.
+    const isBuggyMlbNumericLogo = typeof team.logo_url === 'string'
+      && /\/teamlogos\/mlb\/500\/\d+\.png$/.test(team.logo_url);
     const updatePayload: Record<string, unknown> = {
       wins: standings.wins,
       losses: standings.losses,
@@ -273,7 +305,7 @@ export async function updateStandings(): Promise<{ updated: number; errors: stri
       external_ids: externalIds,
       standings_updated_at: new Date().toISOString(),
     };
-    if (!team.logo_url && standings.logoUrl) {
+    if ((!team.logo_url || isBuggyMlbNumericLogo) && standings.logoUrl) {
       updatePayload.logo_url = standings.logoUrl;
     }
 
