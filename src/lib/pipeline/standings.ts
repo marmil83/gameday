@@ -233,7 +233,7 @@ export async function updateStandings(): Promise<{ updated: number; errors: stri
   console.log('[Standings] Fetching from MLB Stats API, NHL API, and ESPN...');
 
   // Fetch all in parallel
-  const [mlb, milb, nhl, nba, nfl, mls, nwsl, wnba] = await Promise.all([
+  const [mlb, milb, nhl, nba, nfl, mls, nwsl, wnba, usl] = await Promise.all([
     fetchMLBStandings(),
     fetchMiLBStandings(),
     fetchNHLStandings(),
@@ -242,9 +242,13 @@ export async function updateStandings(): Promise<{ updated: number; errors: stri
     fetchESPNStandings('soccer', 'usa.1', true),       // MLS — has ties
     fetchESPNStandings('soccer', 'usa.nwsl', true),    // NWSL — has ties
     fetchESPNStandings('basketball', 'wnba'),
+    // USL Championship — ESPN exposes this feed; works the same as MLS/NWSL
+    // (also has ties). Unlocks auto-logo + auto-standings for DCFC and any
+    // future USL teams without code changes.
+    fetchESPNStandings('soccer', 'usa.usl.1', true),
   ]);
 
-  console.log(`[Standings] MLB:${mlb.size} MiLB:${milb.size} NHL:${nhl.size} NBA:${nba.size} NFL:${nfl.size} MLS:${mls.size} NWSL:${nwsl.size} WNBA:${wnba.size}`);
+  console.log(`[Standings] MLB:${mlb.size} MiLB:${milb.size} NHL:${nhl.size} NBA:${nba.size} NFL:${nfl.size} MLS:${mls.size} NWSL:${nwsl.size} WNBA:${wnba.size} USL:${usl.size}`);
 
   const leagueMap: Record<string, Map<string, StandingsData>> = {
     MLB: mlb,
@@ -255,6 +259,7 @@ export async function updateStandings(): Promise<{ updated: number; errors: stri
     MLS: mls,
     NWSL: nwsl,
     WNBA: wnba,
+    USL: usl,
   };
 
   const { data: teams, error: teamsError } = await supabase.from('teams').select('id, name, league, external_ids, logo_url');
@@ -269,7 +274,7 @@ export async function updateStandings(): Promise<{ updated: number; errors: stri
   let updated = 0;
   for (const team of teams as Array<{ id: string; name: string; league: string; external_ids: Record<string, unknown> | null; logo_url?: string | null }>) {
     const source = leagueMap[team.league];
-    if (!source) continue; // AHL, WHL, USL — no free API yet
+    if (!source) continue; // AHL, WHL — no free API yet (USL wired above)
 
     const standings = findTeamStandings(team.name, source);
     if (!standings) {
