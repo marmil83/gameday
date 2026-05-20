@@ -37,6 +37,85 @@ function priceBucket(p: number | null | undefined): string {
   return Math.round(Math.log10(p) * 10).toString();
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// ESPN team-schedule helper for the home-opener fallback check.
+// Cached per-process so repeated lookups in the same pipeline run
+// don't refetch the league /teams roster.
+// ─────────────────────────────────────────────────────────────────────────
+const LEAGUE_TO_ESPN_SCHED: Record<string, { sport: string; league: string }> = {
+  NBA: { sport: 'basketball', league: 'nba' },
+  WNBA: { sport: 'basketball', league: 'wnba' },
+  NHL: { sport: 'hockey', league: 'nhl' },
+  MLB: { sport: 'baseball', league: 'mlb' },
+  NFL: { sport: 'football', league: 'nfl' },
+  MLS: { sport: 'soccer', league: 'usa.1' },
+  NWSL: { sport: 'soccer', league: 'usa.nwsl' },
+  USL: { sport: 'soccer', league: 'usa.usl.1' },
+};
+const espnTeamIdByLeague: Map<string, Map<string, string>> = new Map();
+
+async function getESPNTeamId(league: string, teamName: string): Promise<string | null> {
+  const m = LEAGUE_TO_ESPN_SCHED[league];
+  if (!m) return null;
+  const cacheKey = `${m.sport}/${m.league}`;
+  let map = espnTeamIdByLeague.get(cacheKey);
+  if (!map) {
+    map = new Map();
+    try {
+      const res = await fetch(
+        `https://site.api.espn.com/apis/site/v2/sports/${m.sport}/${m.league}/teams`,
+        { signal: AbortSignal.timeout(8_000) },
+      );
+      if (!res.ok) return null;
+      const j = await res.json();
+      const teams = j?.sports?.[0]?.leagues?.[0]?.teams || [];
+      for (const t of teams) {
+        const id = t?.team?.id;
+        const dn = (t?.team?.displayName as string | undefined) || '';
+        if (id && dn) map.set(dn.toLowerCase(), String(id));
+      }
+      espnTeamIdByLeague.set(cacheKey, map);
+    } catch {
+      return null;
+    }
+  }
+  return map.get(teamName.toLowerCase()) ?? null;
+}
+
+async function hasEarlierHomeGameOnESPN(
+  league: string,
+  teamName: string,
+  beforeIso: string,
+): Promise<boolean | null> {
+  const m = LEAGUE_TO_ESPN_SCHED[league];
+  if (!m) return null;
+  const teamId = await getESPNTeamId(league, teamName);
+  if (!teamId) return null;
+  try {
+    const res = await fetch(
+      `https://site.api.espn.com/apis/site/v2/sports/${m.sport}/${m.league}/teams/${teamId}/schedule`,
+      { signal: AbortSignal.timeout(8_000) },
+    );
+    if (!res.ok) return null;
+    const j = await res.json();
+    const beforeMs = new Date(beforeIso).getTime();
+    for (const e of j.events || []) {
+      const eMs = new Date(e.date).getTime();
+      if (eMs >= beforeMs) continue;
+      // Some leagues key the home team via competitions[0].competitors;
+      // ESPN's team schedule format puts the team itself in `e.team` and
+      // marks if they were home via the venue/competitions structure.
+      // Most reliable check: competitors array on competitions[0].
+      const competitors = e.competitions?.[0]?.competitors || [];
+      const homeComp = competitors.find((c: { homeAway?: string }) => c.homeAway === 'home');
+      if (homeComp?.team?.id && String(homeComp.team.id) === teamId) return true;
+    }
+    return false;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Get the best pricing snapshot for a game.
  * Prefers the cheapest non-null price across all sources — never lets a null
@@ -224,9 +303,17 @@ export async function enrichSingleGame(gameId: string, force = false): Promise<v
   // detection over-flagged (e.g. WNBA Sparks May 17 was getting "opening
   // day" because it fell in the May 1-20 window even though the team's
   // actual home opener was May 16).
+  //
+  // TWO-STAGE LOOKBACK because our DB only ingests games going FORWARD:
+  //   1. DB check: any earlier home game we already know about?
+  //   2. If DB says no, fall back to ESPN's team schedule API. Catches
+  //      teams whose actual home opener happened BEFORE this site even
+  //      knew about them (e.g. when we added NYC mid-May, Liberty's
+  //      April 25 home opener was never ingested — DB-only check would
+  //      falsely declare May 22 the opener and Haiku writes "opening
+  //      night" copy).
   let isHomeOpener = false;
   if (bigGame.isOpeningDay) {
-    // Look back ~6 months for any earlier home game of this team.
     const sixMonthsBack = new Date(new Date(game.start_time).getTime() - 180 * 24 * 3600_000).toISOString();
     const { data: earlierHomeGames } = await supabase
       .from('games')
@@ -237,7 +324,21 @@ export async function enrichSingleGame(gameId: string, force = false): Promise<v
       .lt('start_time', game.start_time)
       .in('status', ['scheduled', 'completed'])
       .limit(1);
-    isHomeOpener = !earlierHomeGames || earlierHomeGames.length === 0;
+    const dbHasEarlier = !!(earlierHomeGames && earlierHomeGames.length > 0);
+
+    if (dbHasEarlier) {
+      isHomeOpener = false;
+    } else {
+      // Defense: query ESPN's team schedule. Returns true if ESPN's
+      // season schedule has any earlier home game for this team.
+      // Returns null when we can't determine (no ESPN mapping for the
+      // league, network failure, team-name match miss) — in which
+      // case we conservatively trust the date-window gate.
+      const espnSaysEarlier = await hasEarlierHomeGameOnESPN(
+        game.league, game.home_team_name, game.start_time,
+      );
+      isHomeOpener = espnSaysEarlier === true ? false : true;
+    }
   }
 
   // Series-state uncertainty check — for playoff games where ESPN gives us
