@@ -16,9 +16,12 @@ import { createServiceClient } from '../supabase/server';
 import { getBrowser, type PuppeteerBrowser } from './promotions';
 
 // Map our `teams.league` value → TickPick's league slug for URL building.
+// TickPick redirects unrecognized league paths to a working canonical
+// one anyway (so /mls/<team>/, /usl/<team>/, /soccer/<team>/ all resolve
+// to the same listing page), but having the right map keeps URLs clean.
 const TICKPICK_LEAGUE_SLUGS: Record<string, string> = {
   NBA: 'nba', NHL: 'nhl', MLB: 'mlb', NFL: 'nfl',
-  MLS: 'mls', NWSL: 'nwsl', WNBA: 'wnba',
+  MLS: 'mls', NWSL: 'nwsl', WNBA: 'wnba', USL: 'usl',
   AHL: 'ahl', 'MiLB-AAA': 'milb', 'MiLB-AA': 'milb', 'MiLB-A+': 'milb',
 };
 
@@ -120,32 +123,43 @@ async function scrapeTeamPrices(
       return links;
     };
 
-    // 1. Team page first
-    const teamPageUrl = buildTeamPageUrl(teamName, league);
+    // Pull from BOTH the team page AND the search page, then dedupe by
+    // TickPick URL. TickPick's listings are inconsistent — for some
+    // teams the team page returns mostly AWAY games while the search
+    // page returns the HOME games we actually care about (e.g. Detroit
+    // City FC's team page only showed road games; search had Keyworth
+    // Stadium home matches). Using one source missed the team's home
+    // schedule entirely. Combining both is forgiving without false
+    // positives — savePricing only matches against our home-game DB
+    // rows, so any AWAY listing pulled in here just gets dropped on
+    // the match step.
+    const all: PriceResult[] = [];
+    const seenUrls = new Set<string>();
+    const collect = (results: PriceResult[]) => {
+      for (const r of results) {
+        if (seenUrls.has(r.tickpickUrl)) continue;
+        seenUrls.add(r.tickpickUrl);
+        all.push(r);
+      }
+    };
+
+    // Team page
     try {
+      const teamPageUrl = buildTeamPageUrl(teamName, league);
       await page.goto(teamPageUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 });
       await new Promise(r => setTimeout(r, 2_000));
-    } catch {
-      // Navigation timeout / network error — fall through to search
-    }
+      collect(parseEventLinks(await extractLinks()));
+    } catch { /* fall through to search */ }
 
-    let links = await extractLinks();
-    let results = parseEventLinks(links);
+    // Search page (always — many teams' team page omits home games)
+    try {
+      const searchUrl = `https://www.tickpick.com/search?q=${encodeURIComponent(teamName)}`;
+      await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+      await new Promise(r => setTimeout(r, 2_000));
+      collect(parseEventLinks(await extractLinks()));
+    } catch { /* keep whatever team page gave us */ }
 
-    // 2. Search fallback when team page is empty
-    if (results.length === 0) {
-      try {
-        const searchUrl = `https://www.tickpick.com/search?q=${encodeURIComponent(teamName)}`;
-        await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-        await new Promise(r => setTimeout(r, 2_000));
-        links = await extractLinks();
-        results = parseEventLinks(links);
-      } catch {
-        // ignore — return whatever we have
-      }
-    }
-
-    return results;
+    return all;
   } catch (error) {
     console.error(`[TickPick] ${teamName}:`, error);
     return [];
