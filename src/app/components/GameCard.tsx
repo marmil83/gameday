@@ -420,42 +420,6 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
   const lowestPrice = pricing ? Number(pricing.lowest_price || pricing.displayed_price) : null;
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [showTickets, setShowTickets] = useState(false);
-  const [shareState, setShareState] = useState<'idle' | 'working' | 'copied'>('idle');
-
-  // Share handler — the Gen-Z growth loop. On mobile the Web Share API
-  // hands the generated PNG straight to iMessage / Instagram / group
-  // chats (files: [...]); on desktop we fall back to copying the link.
-  // The image itself (from /api/share/<id>) carries the matchup, score,
-  // verdict, and price so a screenshot in a group chat is self-contained.
-  async function handleShare() {
-    setShareState('working');
-    const shareUrl = 'https://www.worthgoing.to';
-    try {
-      const res = await fetch(`/api/share/${game.id}`);
-      const blob = await res.blob();
-      const file = new File([blob], `worthgoing-${game.id}.png`, { type: 'image/png' });
-      const text = insights?.verdict
-        ? `${insights.verdict} — via WorthGoing`
-        : `${game.away_team_name} at ${game.home_team_name} — WorthGoing`;
-      const nav = navigator as Navigator & { canShare?: (d?: ShareData) => boolean };
-      if (nav.canShare && nav.canShare({ files: [file] })) {
-        await nav.share({ files: [file], text, url: shareUrl });
-        setShareState('idle');
-      } else if (nav.share) {
-        await nav.share({ title: 'WorthGoing', text, url: shareUrl });
-        setShareState('idle');
-      } else {
-        // Desktop fallback: open the image in a new tab + copy the link.
-        window.open(`/api/share/${game.id}`, '_blank');
-        await navigator.clipboard.writeText(shareUrl).catch(() => {});
-        setShareState('copied');
-        setTimeout(() => setShareState('idle'), 2000);
-      }
-    } catch {
-      // user cancelled the share sheet, or fetch failed — reset quietly
-      setShareState('idle');
-    }
-  }
 
   const callout = getCalloutBanner(score, tags, insights);
   const priceScore = Number(score?.price_score) || 0;
@@ -735,56 +699,25 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
         </div>
       )}
 
-      {/* Ticket CTA + Share */}
+      {/* Ticket CTA */}
       <div className="px-6 pb-6">
-        <div className="flex items-stretch gap-2">
-          <button
-            onClick={() => setShowTickets(!showTickets)}
-            className="flex-1 flex items-center justify-between py-3.5 px-5 font-semibold text-sm transition-all duration-150 active:scale-[0.98]"
-            style={{
-              background: '#1d1d1f',
-              color: '#ffffff',
-              borderRadius: '100px',
-            }}
+        <button
+          onClick={() => setShowTickets(!showTickets)}
+          className="w-full flex items-center justify-between py-3.5 px-5 font-semibold text-sm transition-all duration-150 active:scale-[0.98]"
+          style={{
+            background: '#1d1d1f',
+            color: '#ffffff',
+            borderRadius: '100px',
+          }}
+        >
+          <span>{lowestPrice ? `Get Tickets · from $${lowestPrice}` : 'View Tickets'}</span>
+          <svg
+            className={`w-4 h-4 transition-transform duration-200 ${showTickets ? 'rotate-180' : ''}`}
+            fill="none" viewBox="0 0 24 24" stroke="currentColor"
           >
-            <span>{lowestPrice ? `Get Tickets · from $${lowestPrice}` : 'View Tickets'}</span>
-            <svg
-              className={`w-4 h-4 transition-transform duration-200 ${showTickets ? 'rotate-180' : ''}`}
-              fill="none" viewBox="0 0 24 24" stroke="currentColor"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-          {/* Share — generates the branded card image and hands it to the
-              native share sheet (mobile) or copies the link (desktop). */}
-          <button
-            onClick={handleShare}
-            disabled={shareState === 'working'}
-            aria-label="Share this game"
-            className="shrink-0 flex items-center justify-center transition-all duration-150 active:scale-[0.95]"
-            style={{
-              width: '52px',
-              background: '#F2F2F7',
-              color: '#1d1d1f',
-              borderRadius: '100px',
-            }}
-          >
-            {shareState === 'working' ? (
-              <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z" />
-              </svg>
-            ) : shareState === 'copied' ? (
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-              </svg>
-            ) : (
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.7 10.7l6.6-3.4M8.7 13.3l6.6 3.4M18 8a3 3 0 10-2.83-4M18 20a3 3 0 10-2.83-2M6 15a3 3 0 100-6 3 3 0 000 6z" />
-              </svg>
-            )}
-          </button>
-        </div>
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
 
         {showTickets && (
           <div className="mt-3 rounded-2xl overflow-hidden" style={{ background: '#F2F2F7' }}>
