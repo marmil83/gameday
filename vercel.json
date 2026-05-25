@@ -9,11 +9,6 @@
     { "path": "/api/pipeline/run?city=Los%20Angeles",   "schedule": "40 9 * * *" },
     { "path": "/api/pipeline/run?city=New%20York",      "schedule": "45 9 * * *" },
 
-    { "path": "/api/pipeline/scrape-tickpick?city=Detroit",       "schedule": "0 11 * * *" },
-    { "path": "/api/pipeline/scrape-tickpick?city=Portland",      "schedule": "10 11 * * *" },
-    { "path": "/api/pipeline/scrape-tickpick?city=Los%20Angeles", "schedule": "20 11 * * *" },
-    { "path": "/api/pipeline/scrape-tickpick?city=New%20York",    "schedule": "30 11 * * *" },
-
     { "path": "/api/pipeline/refresh-pricing",          "schedule": "30 13 * * *" },
     { "path": "/api/pipeline/refresh-pricing",          "schedule": "30 17 * * *" },
     { "path": "/api/pipeline/rescore",                  "schedule": "0 21 * * *" },

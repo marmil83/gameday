@@ -1,0 +1,42 @@
+name: Scrape Promotions
+
+# Promo pages for MLB/NBA/NFL are JavaScript-rendered and need a real
+# headless browser. That works here on GitHub's ubuntu runners (real
+# Chrome) but fails on Vercel serverless — so all promo scraping lives
+# here, not in the Vercel cron. Runs twice daily; promos change slowly
+# so this cadence is plenty, and it lines up with the morning/evening
+# pipeline enrichment picking up fresh promos on the next run.
+
+on:
+  schedule:
+    - cron: '0 8 * * *'   # 8 AM UTC  (4 AM EDT / 1 AM PDT)
+    - cron: '0 20 * * *'  # 8 PM UTC  (4 PM EDT / 1 PM PDT)
+  workflow_dispatch: # allow manual trigger from the GitHub UI
+
+jobs:
+  scrape-promos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chrome for Puppeteer
+        run: npx puppeteer browsers install chrome
+
+      - name: Scrape promotions (all active cities)
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: npx tsx scripts/scrape-promos.ts

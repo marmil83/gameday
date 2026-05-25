@@ -93,20 +93,33 @@ export async function runPipelineForCity(cityId: string): Promise<PipelineResult
   // and extracts once, and the AI sees every date at once — eliminates the
   // "missed on date X, caught on date Y" stochasticity that hid items like
   // the Tigers "313 Value Game".
-  console.log(`[Pipeline] Step 2: Scraping promotions for city ${cityId}`);
-  const { data: cityRow } = await supabase.from('cities').select('timezone').eq('id', cityId).single();
-  const cityTz = cityRow?.timezone || 'America/New_York';
-  const localFmt = new Intl.DateTimeFormat('en-CA', {
-    timeZone: cityTz, year: 'numeric', month: '2-digit', day: '2-digit',
-  });
-  const targetDates: string[] = [];
-  for (let i = 0; i < 5; i++) {
-    const d = new Date();
-    d.setDate(d.getDate() + i);
-    targetDates.push(localFmt.format(d));
+  // Promo scraping is owned by the GitHub Actions workflow
+  // (.github/workflows/scrape-promos.yml), NOT this pipeline. The promo
+  // pages for MLB/NBA/NFL are JS-rendered and require puppeteer, which is
+  // reliable on a GHA ubuntu runner (real Chrome) but fails on Vercel's
+  // serverless @sparticuz/chromium — it silently broke the Tigers/Yankees/
+  // Mets/Angels scrape on every cron run. So on Vercel we skip Step 2
+  // entirely; GHA keeps promos fresh independently. Local runs (no VERCEL
+  // env) still scrape so you can populate promos on demand from a laptop.
+  let promoResult = { total_extracted: 0, errors: [] as string[] };
+  if (process.env.VERCEL) {
+    console.log('[Pipeline] Step 2: SKIPPED on Vercel — promos handled by GitHub Actions');
+  } else {
+    console.log(`[Pipeline] Step 2: Scraping promotions for city ${cityId}`);
+    const { data: cityRow } = await supabase.from('cities').select('timezone').eq('id', cityId).single();
+    const cityTz = cityRow?.timezone || 'America/New_York';
+    const localFmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone: cityTz, year: 'numeric', month: '2-digit', day: '2-digit',
+    });
+    const targetDates: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() + i);
+      targetDates.push(localFmt.format(d));
+    }
+    promoResult = await scrapePromotionsForCity(cityId, targetDates);
+    allErrors.push(...promoResult.errors);
   }
-  const promoResult = await scrapePromotionsForCity(cityId, targetDates);
-  allErrors.push(...promoResult.errors);
 
   // Step 3: Enrich games (AI + scoring).
   // CRITICAL ordering: this MUST run after Step 2 (promo scrape) so the
