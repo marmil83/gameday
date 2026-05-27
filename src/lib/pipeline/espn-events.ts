@@ -323,11 +323,25 @@ export async function ingestESPNEventsForCity(
   let found = 0, inserted = 0, updated = 0, migrated = 0;
   const errors: string[] = [];
 
+  // Track every ESPN event id we see this run, per league. Used after
+  // the ingest loop to purge phantom games — games that USED to be on
+  // ESPN's schedule (e.g. NBA "if necessary" playoff Games 6/7) but
+  // were dropped when the series ended. Without this, Knicks vs Cavs
+  // Game 6/7 stayed in DB as "scheduled" even after the Knicks swept
+  // and the games were never played.
+  const seenEventIdsByLeague = new Map<string, Set<string>>();
+
   for (const [league, leagueTeams] of leagueMap) {
     const { sport, league: espnLeague } = LEAGUE_TO_ESPN[league];
     const events = await fetchESPNScoreboard(sport, espnLeague, now, end);
+    const seenIds = new Set<string>();
+    seenEventIdsByLeague.set(league, seenIds);
 
     for (const event of events) {
+      // Track even before the team-match filter — we want to know
+      // "did ESPN return this event id at all?" not "did it match
+      // one of our teams?"
+      if (event.id) seenIds.add(String(event.id));
       const comp = event.competitions?.[0];
       if (!comp) continue;
 
@@ -373,6 +387,40 @@ export async function ingestESPNEventsForCity(
       }
     }
   }
+
+  // Phantom purge — for each league we ingested, find scheduled ESPN
+  // games in our DB whose source_event_id did NOT appear in this run's
+  // ESPN response. Mark them cancelled. Without this step, NBA/NHL
+  // "if-necessary" Games 6/7 of a series that ended in fewer games
+  // (e.g. a sweep) would stay in DB as fake upcoming games forever.
+  //
+  // Scoped to: source='espn', city + league we just ingested, status
+  // 'scheduled' (don't touch completed games), start_time inside the
+  // current ingest window. The league filter prevents wiping a sport
+  // that wasn't ingested this run (e.g. WNBA pipeline run shouldn't
+  // touch NBA rows).
+  let purged = 0;
+  for (const [league, seenIds] of seenEventIdsByLeague) {
+    const { data: dbGames } = await supabase
+      .from('games')
+      .select('id, source_event_id, away_team_name, home_team_name, start_time')
+      .eq('source', 'espn')
+      .eq('city_id', cityId)
+      .eq('league', league)
+      .eq('status', 'scheduled')
+      .gte('start_time', now.toISOString())
+      .lte('start_time', end.toISOString())
+      .not('source_event_id', 'is', null);
+
+    for (const g of dbGames || []) {
+      if (g.source_event_id && seenIds.has(String(g.source_event_id))) continue;
+      console.log(`[ESPN purge] ${league} ${g.away_team_name} @ ${g.home_team_name} ${g.start_time} — dropped from ESPN, marking cancelled`);
+      const { error } = await supabase.from('games').update({ status: 'cancelled' }).eq('id', g.id);
+      if (error) errors.push(`Purge ${g.id}: ${error.message}`);
+      else purged++;
+    }
+  }
+  if (purged > 0) console.log(`[ESPN purge] ${purged} phantom game(s) marked cancelled`);
 
   return { found, inserted, updated, migrated, errors };
 }
