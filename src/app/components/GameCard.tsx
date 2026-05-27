@@ -721,9 +721,15 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
         >
           {dedupedPromos.map((promo, i) => {
             const isFirst = i === 0;
-            const detail = isFirst
-              ? getPromoDetail(promo, insights?.promo_clarity)
-              : getPromoDetail(promo, null);
+            // Always use the promo's own description — never the
+            // enrichment-AI promo_clarity, which is a single-line
+            // summary of ALL promos on the date and ends up cross-
+            // referencing the other rows below it ("the t-shirt plus
+            // the $3 concessions and the Harry Potter jersey…"), which
+            // is exactly the repetition the user complained about.
+            // promo_clarity stays in the DB for future single-promo
+            // surfaces but no longer leaks into the per-row UI.
+            const detail = getPromoDetail(promo, null);
             return (
               <div
                 key={`${promo.promo_type}-${promo.promo_item ?? ''}-${i}`}
