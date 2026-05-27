@@ -196,6 +196,12 @@ export interface GameCard {
   insights: GameInsight | null;
   home_team_logo: string | null;
   away_team_logo: string | null;
+  // Home-team metadata needed to build per-team deep-links into ticketing
+  // partner sites. abbreviation drives the Gametime URL pattern
+  // (mlbdet, nbanyk, …); external_ids.ticketmaster_artist_id drives the
+  // Ticketmaster URL (cached by a one-off backfill script).
+  home_team_abbreviation: string | null;
+  home_team_external_ids: Record<string, unknown> | null;
 }
 
 export interface CityGames {

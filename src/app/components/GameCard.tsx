@@ -42,7 +42,14 @@ const SOURCE_DISPLAY: Record<string, { label: string; favicon: string; isAllin?:
 interface PartnerLink {
   name: string;
   favicon: string;
-  getUrl: (ctx: { home: string; away: string; league: string; gameDate: Date }) => string;
+  getUrl: (ctx: {
+    home: string;
+    away: string;
+    league: string;
+    gameDate: Date;
+    abbreviation: string | null;
+    externalIds: Record<string, unknown> | null;
+  }) => string;
 }
 
 // Lowercase-hyphen team slug shared by most marketplaces.
@@ -68,10 +75,16 @@ const PARTNER_LINKS: PartnerLink[] = [
   {
     name: 'Gametime',
     favicon: 'https://gametime.co/favicon.ico',
-    // Gametime is mobile-app-first; their web search relevance is poor
-    // and we couldn't find a working team-page URL pattern. This is the
-    // least-broken endpoint — sometimes returns hits, sometimes empty.
-    getUrl: ({ home }) => `https://gametime.co/search?query=${encodeURIComponent(home)}`,
+    // Gametime's team page is /<team-slug>-tickets/performers/<league><abbrev>
+    // (e.g. mlbdet for Detroit Tigers). Deterministic from our team
+    // abbreviation column. Falls back to search if abbreviation is null.
+    getUrl: ({ home, league, abbreviation }) => {
+      if (abbreviation) {
+        const perf = `${league}${abbreviation}`.toLowerCase();
+        return `https://gametime.co/${teamSlug(home)}-tickets/performers/${perf}`;
+      }
+      return `https://gametime.co/search?query=${encodeURIComponent(home)}`;
+    },
   },
   {
     name: 'SeatGeek',
@@ -84,9 +97,18 @@ const PARTNER_LINKS: PartnerLink[] = [
   {
     name: 'Ticketmaster',
     favicon: 'https://www.ticketmaster.com/favicon.ico',
-    // /discover/sports (not /discover/concerts which lands on the
-    // concerts category and confuses users testing a Tigers link).
-    getUrl: ({ home }) => `https://www.ticketmaster.com/discover/sports?keyword=${encodeURIComponent(home)}`,
+    // Real team page is /<team-slug>-tickets/artist/<artist_id>. The
+    // artist_id is opaque per team — we discover + cache it in
+    // teams.external_ids.ticketmaster_artist_id via the one-off backfill
+    // script (scripts/backfill-ticketmaster-ids.ts). Falls back to
+    // /discover/sports search when we don't have the ID cached yet.
+    getUrl: ({ home, externalIds }) => {
+      const artistId = externalIds?.ticketmaster_artist_id;
+      if (artistId) {
+        return `https://www.ticketmaster.com/${teamSlug(home)}-tickets/artist/${artistId}`;
+      }
+      return `https://www.ticketmaster.com/discover/sports?keyword=${encodeURIComponent(home)}`;
+    },
   },
 ];
 
@@ -506,6 +528,8 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
           away: game.away_team_name,
           league: game.league,
           gameDate: new Date(game.start_time),
+          abbreviation: data.home_team_abbreviation,
+          externalIds: data.home_team_external_ids,
         };
         return {
           key: `partner-${p.name}`,

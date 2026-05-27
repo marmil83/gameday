@@ -778,7 +778,7 @@ export async function getTopGamesForCity(
       game_insights (*),
       promotions (*),
       pricing_snapshots (*),
-      home_team:teams!home_team_id (logo_url),
+      home_team:teams!home_team_id (logo_url, abbreviation, external_ids),
       away_team:teams!away_team_id (logo_url)
     `)
     .eq('city_id', cityId)
@@ -858,6 +858,8 @@ export async function getTopGamesForCity(
       insights: Array.isArray(game.game_insights) ? game.game_insights[0] || null : game.game_insights || null,
       home_team_logo: (game as any).home_team?.logo_url || null,
       away_team_logo: (game as any).away_team?.logo_url || null,
+      home_team_abbreviation: (game as any).home_team?.abbreviation || null,
+      home_team_external_ids: (game as any).home_team?.external_ids || null,
     };
   });
 }
