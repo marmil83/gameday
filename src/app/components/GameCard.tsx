@@ -50,50 +50,43 @@ function teamSlug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
-// Map our `teams.league` to Vivid Seats' league URL slug.
-const VIVID_LEAGUE: Record<string, string> = {
-  MLB: 'mlb', NBA: 'nba', NHL: 'nhl', NFL: 'nfl',
-  MLS: 'mls', NWSL: 'nwsl', WNBA: 'wnba',
-  AHL: 'ahl', 'MiLB-AAA': 'milb', 'MiLB-AA': 'milb', 'MiLB-A+': 'milb',
-  USL: 'usl', WHL: 'whl',
-};
-
 const PARTNER_LINKS: PartnerLink[] = [
   {
     name: 'StubHub',
     favicon: 'https://www.stubhub.com/favicon.ico',
+    // Team page reliably shows the team's full upcoming schedule.
     getUrl: ({ home }) => `https://www.stubhub.com/${teamSlug(home)}-tickets/`,
   },
   {
     name: 'Vivid Seats',
     favicon: 'https://www.vividseats.com/favicon.ico',
-    getUrl: ({ home, league }) => {
-      const lg = VIVID_LEAGUE[league];
-      return lg
-        ? `https://www.vividseats.com/${lg}/${teamSlug(home)}-tickets`
-        : `https://www.vividseats.com/search?searchTerm=${encodeURIComponent(home)}`;
-    },
+    // Reverting to their site search — the league/<team> path returns a
+    // soft-404 ("we can't find that page") for most teams despite a 200
+    // HTTP status. Search at least surfaces the team's upcoming events.
+    getUrl: ({ home }) => `https://www.vividseats.com/search?searchTerm=${encodeURIComponent(home)}`,
   },
   {
     name: 'Gametime',
     favicon: 'https://gametime.co/favicon.ico',
-    // No reliable team page pattern across leagues — use search with just
-    // the team name (matchup+date returns zero results, team-name alone
-    // at least surfaces the team's upcoming games on most occasions).
+    // Gametime is mobile-app-first; their web search relevance is poor
+    // and we couldn't find a working team-page URL pattern. This is the
+    // least-broken endpoint — sometimes returns hits, sometimes empty.
     getUrl: ({ home }) => `https://gametime.co/search?query=${encodeURIComponent(home)}`,
   },
   {
     name: 'SeatGeek',
     favicon: 'https://seatgeek.com/favicon.ico',
+    // Compare-row builder overrides this with the per-game event URL
+    // (game.affiliate_url from SeatGeek's API) whenever we have one;
+    // this is only the fallback for events SG's API doesn't know about.
     getUrl: ({ home }) => `https://seatgeek.com/${teamSlug(home)}-tickets`,
   },
   {
     name: 'Ticketmaster',
     favicon: 'https://www.ticketmaster.com/favicon.ico',
-    // Their /<team>-tickets/ paths require an artist ID we don't have;
-    // /discover/concerts?keyword= is their generic-search endpoint and
-    // returns the team's events reliably for sports teams.
-    getUrl: ({ home }) => `https://www.ticketmaster.com/discover/concerts?keyword=${encodeURIComponent(home)}`,
+    // /discover/sports (not /discover/concerts which lands on the
+    // concerts category and confuses users testing a Tigers link).
+    getUrl: ({ home }) => `https://www.ticketmaster.com/discover/sports?keyword=${encodeURIComponent(home)}`,
   },
 ];
 
