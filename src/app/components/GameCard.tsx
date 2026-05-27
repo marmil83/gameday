@@ -23,71 +23,77 @@ const SOURCE_DISPLAY: Record<string, { label: string; favicon: string; isAllin?:
   },
 };
 
-// Partner deep-links — until we have affiliate API access for any of
-// these, we can't land users on a per-game checkout page. The next
-// best thing is a SEARCH URL with a rich query (matchup + date) so
-// users see only the specific game (or very close to it) in results,
-// instead of the team's full schedule.
+// Partner deep-links. Without affiliate API access we can't go straight
+// to a per-game checkout page, so we land users on each platform's
+// TEAM PAGE — they see the team's full schedule and pick the game.
+// Tried matchup+date search queries first; their search engines are
+// tuned for "Taylor Swift Atlanta" and returned 0 results on Vivid /
+// Gametime / Ticketmaster with sports-style queries. Team pages are
+// reliably non-empty and that's the closest we get without paying.
 //
-// Why these specific URL patterns (verified by HTTP probe + manual
-// click-test in the browser):
-//   • StubHub:    /search/?q=<query>     — works, results list
-//   • Vivid Seats: /search?searchTerm=    — works (rejects HEAD, GETs fine)
-//   • Gametime:   /search?query=<query>  — works (the old /events?q=
-//     pattern 404s — that was the bug)
-//   • Ticketmaster: /search?q=<query>     — works (the old
-//     /<team>-tickets/ pattern 404s for most teams now)
-//   • SeatGeek: per-game URL when we have one (from API affiliate_url);
-//     otherwise their team page redirects/403s without a session, so
-//     also use search?search=<query>
+// Per-platform URL patterns (verified via HTTP probe):
+//   • StubHub      → /<team-slug>-tickets/                  ✓ team schedule
+//   • Vivid Seats  → /<league>/<team-slug>-tickets          ✓ team schedule
+//   • Gametime     → no team page works at any pattern we
+//                    tested → fall back to search?query=    (best we can do)
+//   • SeatGeek     → per-game URL from affiliate_url when
+//                    we have one, else /<team-slug>-tickets
+//   • Ticketmaster → /discover/concerts?keyword=<team>      ✓ search results
 interface PartnerLink {
   name: string;
   favicon: string;
-  /**
-   * @param ctx Matchup + date passed in so each partner can compose a
-   *   rich search query — "Los Angeles Angels at Detroit Tigers May 27"
-   *   lands users much closer to the specific game than "Detroit Tigers".
-   */
-  getUrl: (ctx: { home: string; away: string; gameDate: Date }) => string;
+  getUrl: (ctx: { home: string; away: string; league: string; gameDate: Date }) => string;
 }
 
-// Short month names used by every US ticketing site's search relevance.
-const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-
-// Build a natural-language query that every search engine ranks well.
-// "Los Angeles Angels at Detroit Tigers May 27"
-function matchupQuery(home: string, away: string | null | undefined, gameDate: Date): string {
-  const m = MONTH_SHORT[gameDate.getUTCMonth()];
-  const d = gameDate.getUTCDate();
-  const matchup = away && away !== 'TBD' ? `${away} at ${home}` : home;
-  return `${matchup} ${m} ${d}`;
+// Lowercase-hyphen team slug shared by most marketplaces.
+function teamSlug(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
+
+// Map our `teams.league` to Vivid Seats' league URL slug.
+const VIVID_LEAGUE: Record<string, string> = {
+  MLB: 'mlb', NBA: 'nba', NHL: 'nhl', NFL: 'nfl',
+  MLS: 'mls', NWSL: 'nwsl', WNBA: 'wnba',
+  AHL: 'ahl', 'MiLB-AAA': 'milb', 'MiLB-AA': 'milb', 'MiLB-A+': 'milb',
+  USL: 'usl', WHL: 'whl',
+};
 
 const PARTNER_LINKS: PartnerLink[] = [
   {
     name: 'StubHub',
     favicon: 'https://www.stubhub.com/favicon.ico',
-    getUrl: ({ home, away, gameDate }) => `https://www.stubhub.com/search/?q=${encodeURIComponent(matchupQuery(home, away, gameDate))}`,
+    getUrl: ({ home }) => `https://www.stubhub.com/${teamSlug(home)}-tickets/`,
   },
   {
     name: 'Vivid Seats',
     favicon: 'https://www.vividseats.com/favicon.ico',
-    getUrl: ({ home, away, gameDate }) => `https://www.vividseats.com/search?searchTerm=${encodeURIComponent(matchupQuery(home, away, gameDate))}`,
+    getUrl: ({ home, league }) => {
+      const lg = VIVID_LEAGUE[league];
+      return lg
+        ? `https://www.vividseats.com/${lg}/${teamSlug(home)}-tickets`
+        : `https://www.vividseats.com/search?searchTerm=${encodeURIComponent(home)}`;
+    },
   },
   {
     name: 'Gametime',
     favicon: 'https://gametime.co/favicon.ico',
-    getUrl: ({ home, away, gameDate }) => `https://gametime.co/search?query=${encodeURIComponent(matchupQuery(home, away, gameDate))}`,
+    // No reliable team page pattern across leagues — use search with just
+    // the team name (matchup+date returns zero results, team-name alone
+    // at least surfaces the team's upcoming games on most occasions).
+    getUrl: ({ home }) => `https://gametime.co/search?query=${encodeURIComponent(home)}`,
   },
   {
     name: 'SeatGeek',
     favicon: 'https://seatgeek.com/favicon.ico',
-    getUrl: ({ home, away, gameDate }) => `https://seatgeek.com/search?search=${encodeURIComponent(matchupQuery(home, away, gameDate))}`,
+    getUrl: ({ home }) => `https://seatgeek.com/${teamSlug(home)}-tickets`,
   },
   {
     name: 'Ticketmaster',
     favicon: 'https://www.ticketmaster.com/favicon.ico',
-    getUrl: ({ home, away, gameDate }) => `https://www.ticketmaster.com/search?q=${encodeURIComponent(matchupQuery(home, away, gameDate))}`,
+    // Their /<team>-tickets/ paths require an artist ID we don't have;
+    // /discover/concerts?keyword= is their generic-search endpoint and
+    // returns the team's events reliably for sports teams.
+    getUrl: ({ home }) => `https://www.ticketmaster.com/discover/concerts?keyword=${encodeURIComponent(home)}`,
   },
 ];
 
@@ -505,6 +511,7 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
         const ctx = {
           home: game.home_team_name,
           away: game.away_team_name,
+          league: game.league,
           gameDate: new Date(game.start_time),
         };
         return {
