@@ -79,6 +79,12 @@ function freshness(capturedAt: string | null | undefined): { label: string; colo
 //          ALL-IN · CHEAPEST                 12m ago
 // Avoids the mobile bug where ALL-IN/CHEAPEST competed with the price
 // for horizontal space and wrapped into a misshapen pill.
+// Single row in the unified Kayak/Skyscanner-style comparison panel.
+// Same visual treatment regardless of whether we have a live price —
+// the only difference is the right-side content: priced sources show
+// "from $X" + freshness, unpriced sources show "Check price →". This
+// keeps every source feeling first-class (real comparison aesthetic)
+// instead of segregating "real" sources from "also check" pills.
 function TicketSourceRow({
   favicon,
   name,
@@ -90,13 +96,13 @@ function TicketSourceRow({
 }: {
   favicon: string;
   name: string;
-  price: number;
+  price: number | null; // null = no live price; show "Check price →"
   url: string;
   isAllin?: boolean;
   capturedAt: string | null;
   isCheapest: boolean;
 }) {
-  const fresh = freshness(capturedAt);
+  const fresh = price != null ? freshness(capturedAt) : null;
   return (
     <a
       href={url}
@@ -132,12 +138,18 @@ function TicketSourceRow({
       </div>
       <div className="flex flex-col items-end shrink-0 gap-0.5">
         <div className="flex items-center gap-1">
-          <span className="text-sm font-semibold" style={{ color: '#1d1d1f', whiteSpace: 'nowrap' }}>from ${price}</span>
+          {price != null ? (
+            <span className="text-sm font-semibold" style={{ color: '#1d1d1f', whiteSpace: 'nowrap' }}>from ${price}</span>
+          ) : (
+            <span className="text-sm" style={{ color: '#86868b', whiteSpace: 'nowrap' }}>Check price</span>
+          )}
           <svg className="w-3.5 h-3.5 ml-0.5" style={{ color: '#aeaeb2' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
           </svg>
         </div>
-        <span className="text-[10px]" style={{ color: fresh.color, whiteSpace: 'nowrap' }}>{fresh.label}</span>
+        {fresh ? (
+          <span className="text-[10px]" style={{ color: fresh.color, whiteSpace: 'nowrap' }}>{fresh.label}</span>
+        ) : null}
       </div>
     </a>
   );
@@ -164,30 +176,6 @@ function SourceFavicon({ src, name, className = '' }: { src: string; name: strin
       src={src}
       alt=""
       className={`w-5 h-5 rounded object-contain shrink-0 ${className}`}
-      onError={() => setErrored(true)}
-    />
-  );
-}
-
-// Smaller variant for the partner pills (3.5×3.5 instead of 5×5).
-function PartnerPillFavicon({ src, name }: { src: string; name: string }) {
-  const [errored, setErrored] = useState(false);
-  if (errored || !src) {
-    return (
-      <div
-        className="w-3.5 h-3.5 rounded shrink-0 flex items-center justify-center text-[8px] font-bold"
-        style={{ background: '#1d1d1f', color: '#fff' }}
-        aria-hidden="true"
-      >
-        {name.charAt(0)}
-      </div>
-    );
-  }
-  return (
-    <img
-      src={src}
-      alt=""
-      className="w-3.5 h-3.5 rounded object-contain shrink-0"
       onError={() => setErrored(true)}
     />
   );
@@ -442,13 +430,59 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
         key: s.source_name,
         favicon: meta.favicon,
         name: meta.label,
-        price: Number(s.lowest_price),
+        price: Number(s.lowest_price) as number | null,
         url: s.affiliate_url || game.affiliate_url || '#',
         isAllin: meta.isAllin,
         capturedAt: s.captured_at ?? null,
         isCheapest: i === 0,
       };
     });
+
+  // Unified Kayak/Skyscanner-style comparison row list:
+  // 1. Every source with a live price (TickPick + SeatGeek when available)
+  //    sorted ascending — cheapest at top with the badge.
+  // 2. Every other partner site below, no fake prices, "Check price →"
+  //    CTA. Dedupes against ticketRows so SeatGeek doesn't show twice
+  //    once we have a live price for it.
+  // The two used to live in visually different sections ("Live prices"
+  // and "Also check"); unifying them is the single biggest visual lift
+  // toward a real comparison-tool feel without affiliate revenue yet.
+  type CompareRow = {
+    key: string;
+    favicon: string;
+    name: string;
+    price: number | null;
+    url: string;
+    isAllin?: boolean;
+    capturedAt: string | null;
+    isCheapest: boolean;
+  };
+  const compareRows: CompareRow[] = [
+    ...ticketRows,
+    ...PARTNER_LINKS
+      .filter(p => !ticketRows.some(r => r.name === p.name))
+      .map(p => {
+        // Per-game deep link beats generic team search whenever we have
+        // one. SeatGeek's API stores the event URL on game.affiliate_url
+        // for every game it knows about — when that's present, point the
+        // SeatGeek "Check price" row directly at the event instead of a
+        // search page. Easy win in trust + click-through.
+        const isSeatGeek = p.name === 'SeatGeek';
+        const deepLink = isSeatGeek && game.affiliate_url?.includes('seatgeek.com')
+          ? game.affiliate_url
+          : null;
+        return {
+          key: `partner-${p.name}`,
+          favicon: p.favicon,
+          name: p.name,
+          price: null,
+          url: deepLink ?? p.getUrl(game.home_team_name),
+          isAllin: false,
+          capturedAt: null,
+          isCheapest: false,
+        };
+      }),
+  ];
 
   return (
     <div
@@ -721,64 +755,29 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
 
         {showTickets && (
           <div className="mt-3 rounded-2xl overflow-hidden" style={{ background: '#F2F2F7' }}>
-            {/* Live-priced sources */}
+            {/* Unified comparison — every source as a first-class row */}
             <div className="px-4 pt-3 pb-1">
               <p className="text-[10px] font-medium uppercase tracking-wider" style={{ color: '#aeaeb2' }}>
-                Live prices
+                Compare prices
               </p>
             </div>
-            {ticketRows.length > 0 ? (
-              <div className="px-3 pb-1 divide-y" style={{ borderColor: 'rgba(0,0,0,0.05)' }}>
-                {ticketRows.map(row => (
-                  <TicketSourceRow
-                    key={row.key}
-                    favicon={row.favicon}
-                    name={row.name}
-                    price={row.price}
-                    url={row.url}
-                    isAllin={row.isAllin}
-                    capturedAt={row.capturedAt}
-                    isCheapest={row.isCheapest}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="px-4 py-3">
-                <p className="text-xs" style={{ color: '#86868b' }}>No live pricing yet — check back soon.</p>
-              </div>
-            )}
-
-            {/* Partner search links — secondary treatment, no fake prices */}
-            <div className="px-4 pt-3 pb-1 border-t" style={{ borderColor: 'rgba(0,0,0,0.05)' }}>
-              <p className="text-[10px] font-medium uppercase tracking-wider" style={{ color: '#aeaeb2' }}>
-                Also check
-              </p>
+            <div className="px-3 pb-1 divide-y" style={{ borderColor: 'rgba(0,0,0,0.05)' }}>
+              {compareRows.map(row => (
+                <TicketSourceRow
+                  key={row.key}
+                  favicon={row.favicon}
+                  name={row.name}
+                  price={row.price}
+                  url={row.url}
+                  isAllin={row.isAllin}
+                  capturedAt={row.capturedAt}
+                  isCheapest={row.isCheapest}
+                />
+              ))}
             </div>
-            <div className="px-3 pb-2">
-              <div className="flex flex-wrap gap-1.5 px-1 py-1">
-                {PARTNER_LINKS
-                  .filter(p => !ticketRows.some(r => r.name === p.name))
-                  .map(p => (
-                    <a
-                      key={p.name}
-                      href={p.getUrl(game.home_team_name)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full transition-colors"
-                      style={{ background: '#ffffff', border: '1px solid rgba(0,0,0,0.06)' }}
-                    >
-                      <PartnerPillFavicon src={p.favicon} name={p.name} />
-                      <span className="text-xs" style={{ color: '#1d1d1f', whiteSpace: 'nowrap' }}>{p.name}</span>
-                      <svg className="w-2.5 h-2.5" style={{ color: '#aeaeb2' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                      </svg>
-                    </a>
-                  ))}
-              </div>
-            </div>
-            <div className="px-4 pb-3 space-y-1">
+            <div className="px-4 pt-2 pb-3">
               <p className="text-[10px] leading-snug" style={{ color: '#aeaeb2' }}>
-                ALL-IN means the price shown is what you pay; otherwise expect fees at checkout. &ldquo;Also check&rdquo; opens partner search pages — live pricing for these is coming soon.
+                ALL-IN means the price shown is what you pay; otherwise expect fees at checkout. &ldquo;Check price&rdquo; opens that source directly — live pricing for those is coming soon.
               </p>
             </div>
           </div>
