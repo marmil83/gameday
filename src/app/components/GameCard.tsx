@@ -23,41 +23,71 @@ const SOURCE_DISPLAY: Record<string, { label: string; favicon: string; isAllin?:
   },
 };
 
-// Partner deep-links — shown beneath the live-pricing rows in a clearly
-// secondary treatment. They're search-page links (no live price), but
-// surfacing them lets visitors cross-shop manually until we have
-// affiliate API access for live data on each.
+// Partner deep-links — until we have affiliate API access for any of
+// these, we can't land users on a per-game checkout page. The next
+// best thing is a SEARCH URL with a rich query (matchup + date) so
+// users see only the specific game (or very close to it) in results,
+// instead of the team's full schedule.
+//
+// Why these specific URL patterns (verified by HTTP probe + manual
+// click-test in the browser):
+//   • StubHub:    /search/?q=<query>     — works, results list
+//   • Vivid Seats: /search?searchTerm=    — works (rejects HEAD, GETs fine)
+//   • Gametime:   /search?query=<query>  — works (the old /events?q=
+//     pattern 404s — that was the bug)
+//   • Ticketmaster: /search?q=<query>     — works (the old
+//     /<team>-tickets/ pattern 404s for most teams now)
+//   • SeatGeek: per-game URL when we have one (from API affiliate_url);
+//     otherwise their team page redirects/403s without a session, so
+//     also use search?search=<query>
 interface PartnerLink {
   name: string;
   favicon: string;
-  getUrl: (homeTeam: string) => string;
+  /**
+   * @param ctx Matchup + date passed in so each partner can compose a
+   *   rich search query — "Los Angeles Angels at Detroit Tigers May 27"
+   *   lands users much closer to the specific game than "Detroit Tigers".
+   */
+  getUrl: (ctx: { home: string; away: string; gameDate: Date }) => string;
+}
+
+// Short month names used by every US ticketing site's search relevance.
+const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+// Build a natural-language query that every search engine ranks well.
+// "Los Angeles Angels at Detroit Tigers May 27"
+function matchupQuery(home: string, away: string | null | undefined, gameDate: Date): string {
+  const m = MONTH_SHORT[gameDate.getUTCMonth()];
+  const d = gameDate.getUTCDate();
+  const matchup = away && away !== 'TBD' ? `${away} at ${home}` : home;
+  return `${matchup} ${m} ${d}`;
 }
 
 const PARTNER_LINKS: PartnerLink[] = [
   {
     name: 'StubHub',
     favicon: 'https://www.stubhub.com/favicon.ico',
-    getUrl: (home) => `https://www.stubhub.com/${home.toLowerCase().replace(/\s+/g, '-')}-tickets/`,
+    getUrl: ({ home, away, gameDate }) => `https://www.stubhub.com/search/?q=${encodeURIComponent(matchupQuery(home, away, gameDate))}`,
   },
   {
     name: 'Vivid Seats',
     favicon: 'https://www.vividseats.com/favicon.ico',
-    getUrl: (home) => `https://www.vividseats.com/search?searchTerm=${encodeURIComponent(home)}`,
+    getUrl: ({ home, away, gameDate }) => `https://www.vividseats.com/search?searchTerm=${encodeURIComponent(matchupQuery(home, away, gameDate))}`,
   },
   {
     name: 'Gametime',
     favicon: 'https://gametime.co/favicon.ico',
-    getUrl: (home) => `https://gametime.co/events?q=${encodeURIComponent(home)}`,
+    getUrl: ({ home, away, gameDate }) => `https://gametime.co/search?query=${encodeURIComponent(matchupQuery(home, away, gameDate))}`,
   },
   {
     name: 'SeatGeek',
     favicon: 'https://seatgeek.com/favicon.ico',
-    getUrl: (home) => `https://seatgeek.com/${home.toLowerCase().replace(/\s+/g, '-')}-tickets`,
+    getUrl: ({ home, away, gameDate }) => `https://seatgeek.com/search?search=${encodeURIComponent(matchupQuery(home, away, gameDate))}`,
   },
   {
     name: 'Ticketmaster',
     favicon: 'https://www.ticketmaster.com/favicon.ico',
-    getUrl: (home) => `https://www.ticketmaster.com/${home.toLowerCase().replace(/\s+/g, '-')}-tickets/`,
+    getUrl: ({ home, away, gameDate }) => `https://www.ticketmaster.com/search?q=${encodeURIComponent(matchupQuery(home, away, gameDate))}`,
   },
 ];
 
@@ -462,21 +492,27 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
     ...PARTNER_LINKS
       .filter(p => !ticketRows.some(r => r.name === p.name))
       .map(p => {
-        // Per-game deep link beats generic team search whenever we have
-        // one. SeatGeek's API stores the event URL on game.affiliate_url
-        // for every game it knows about — when that's present, point the
-        // SeatGeek "Check price" row directly at the event instead of a
-        // search page. Easy win in trust + click-through.
+        // Per-game deep link beats search whenever we have one. SeatGeek's
+        // API stores the event URL on game.affiliate_url for every event
+        // it knows about — when that's present, point the SeatGeek row
+        // directly at the event instead of a search page. For other
+        // partners, fall through to a matchup+date search query that
+        // lands users on (or very close to) the specific game.
         const isSeatGeek = p.name === 'SeatGeek';
         const deepLink = isSeatGeek && game.affiliate_url?.includes('seatgeek.com')
           ? game.affiliate_url
           : null;
+        const ctx = {
+          home: game.home_team_name,
+          away: game.away_team_name,
+          gameDate: new Date(game.start_time),
+        };
         return {
           key: `partner-${p.name}`,
           favicon: p.favicon,
           name: p.name,
           price: null,
-          url: deepLink ?? p.getUrl(game.home_team_name),
+          url: deepLink ?? p.getUrl(ctx),
           isAllin: false,
           capturedAt: null,
           isCheapest: false,
