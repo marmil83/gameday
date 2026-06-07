@@ -255,6 +255,11 @@ export default function GameList() {
         <p className="text-xs" style={{ color: '#52525b' }}>
           Prices may not include all fees. Always verify at checkout.
         </p>
+        <p className="text-[11px] mt-3" style={{ color: '#52525b' }}>
+          <a href="/privacy" className="underline">Privacy</a>
+          {' · '}
+          <a href="/terms" className="underline">Terms</a>
+        </p>
       </footer>
     </div>
   );

@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { GameCard as GameCardType, PricingSnapshot } from '@/types/database';
 import { PRICING_LABELS } from '@/lib/constants';
 import { getVenueLogistics } from '@/lib/venues';
+import AlertModal from './AlertModal';
 
 // Display registry for ticket sources we actively pull live prices from.
 // Sources without live data + an affiliate program don't appear in the
@@ -620,6 +621,28 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [showTickets, setShowTickets] = useState(false);
   const [shareState, setShareState] = useState<'idle' | 'working' | 'copied'>('idle');
+  const [showAlertModal, setShowAlertModal] = useState(false);
+  // localStorage-backed "you've signed up for this game" flag so the bell
+  // can render filled across sessions without a server round-trip.
+  const [isWatching, setIsWatching] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = window.localStorage.getItem('wg_alerts');
+      const map: Record<string, boolean> = raw ? JSON.parse(raw) : {};
+      if (map[game.id]) setIsWatching(true);
+    } catch {/* private mode etc. */}
+  }, [game.id]);
+
+  function markWatching() {
+    setIsWatching(true);
+    try {
+      const raw = window.localStorage.getItem('wg_alerts');
+      const map: Record<string, boolean> = raw ? JSON.parse(raw) : {};
+      map[game.id] = true;
+      window.localStorage.setItem('wg_alerts', JSON.stringify(map));
+    } catch {/* private mode */}
+  }
 
   // Share handler — the growth loop. On mobile the Web Share API hands
   // the generated PNG straight to iMessage / Instagram / group chats;
@@ -1085,6 +1108,27 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
             </svg>
           </button>
+          {/* Price-drop alert signup. Bell fills + turns green once the
+              visitor has subscribed (persisted in localStorage so it
+              survives reloads without a server query). Clicking again
+              just re-opens the modal — server idempotently handles a
+              re-submit of an already-active alert. */}
+          <button
+            onClick={() => setShowAlertModal(true)}
+            aria-label={isWatching ? 'Already watching this game' : 'Get price-drop alerts'}
+            className="shrink-0 flex items-center justify-center transition-all duration-150 active:scale-[0.95]"
+            style={{
+              width: '52px',
+              background: isWatching ? 'rgba(52,199,89,0.14)' : '#262630',
+              color: isWatching ? '#34c759' : '#fafafa',
+              borderRadius: '100px',
+              border: `1px solid ${isWatching ? 'rgba(52,199,89,0.35)' : 'rgba(255,255,255,0.05)'}`,
+            }}
+          >
+            <svg className="w-5 h-5" fill={isWatching ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0a3 3 0 11-6 0m6 0H9" />
+            </svg>
+          </button>
           {/* Share — generates a branded card PNG and hands it to the
               native share sheet on mobile (iMessage / Instagram / group
               chats) or copies the link on desktop. */}
@@ -1148,6 +1192,20 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
           </div>
         )}
       </div>
+
+      {showAlertModal && (
+        <AlertModal
+          gameId={game.id}
+          matchupTitle={(() => {
+            const isWC = game.league === 'FIFA-WC';
+            const marquee = isWC ? game.home_team_name : game.away_team_name;
+            const opponent = isWC ? game.away_team_name : game.home_team_name;
+            return isWC ? `${marquee} vs ${opponent}` : `${marquee} at ${opponent}`;
+          })()}
+          onClose={() => setShowAlertModal(false)}
+          onSubscribed={markWatching}
+        />
+      )}
     </div>
   );
 }
