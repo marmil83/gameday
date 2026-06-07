@@ -32,7 +32,7 @@ export default function CityNav({ currentCity, onCityChange }: CityNavProps) {
   if (cities.length === 0) return null;
 
   return (
-    <div className="max-w-lg mx-auto px-5 pt-3">
+    <div className="pt-3">
       <div className="flex items-center gap-2 overflow-x-auto pb-1 -mb-1">
         {cities.map(city => {
           const active = city.name === currentCity;

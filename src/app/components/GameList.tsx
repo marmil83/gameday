@@ -118,20 +118,19 @@ export default function GameList() {
 
   return (
     <div className="min-h-screen" style={{ background: '#F2F2F7' }}>
-      {/* Header — wordmark only; city picker moved to its own pill row
-          below so the supported markets are broadcast prominently
-          instead of hidden behind a dropdown. */}
-      <header className="bg-white/80 backdrop-blur-md border-b border-black/5 sticky top-0 z-10">
-        <div className="max-w-lg mx-auto px-5 py-4">
-          <h1 className="text-lg font-semibold tracking-tight" style={{ color: '#1d1d1f' }}>WorthGoing</h1>
-          <p className="text-xs mt-0.5" style={{ color: '#86868b' }}>Know Before You Go</p>
+      {/* Sticky top nav — wordmark + city pills together so the
+          supported markets stay visible as the user scrolls through
+          games. Detroit + Portland are soft-hidden via
+          cities.is_active=false; flip back on and they auto-reappear. */}
+      <header className="bg-white/85 backdrop-blur-md border-b border-black/5 sticky top-0 z-10">
+        <div className="max-w-lg mx-auto px-5 pt-3 pb-2">
+          <div className="flex items-baseline justify-between">
+            <h1 className="text-lg font-semibold tracking-tight" style={{ color: '#1d1d1f' }}>WorthGoing</h1>
+            <p className="text-[11px]" style={{ color: '#86868b' }}>Know Before You Go</p>
+          </div>
+          <CityNav currentCity={city} onCityChange={handleCityChange} />
         </div>
       </header>
-
-      {/* City pill row — currently 3 active cities (NYC, LA, Chicago).
-          Detroit + Portland are soft-hidden (cities.is_active=false) and
-          will re-appear here automatically when flipped back on. */}
-      <CityNav currentCity={city} onCityChange={handleCityChange} />
 
       {/* Headline + date nav */}
       <div className="max-w-lg mx-auto px-5 pt-8 pb-3">
