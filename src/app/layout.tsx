@@ -29,8 +29,14 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${geistSans.variable} ${spaceGrotesk.variable} h-full antialiased`}>
       {/* Dark base bg prevents a white flash before client hydration on
-          the dark-themed game list. */}
-      <body className="min-h-full flex flex-col font-sans" style={{ background: '#0a0a0d', color: '#fafafa' }}>
+          the dark-themed game list. overflow-x: hidden guards against
+          any single element (long verdict, transit string, sticky-header
+          city pill row) pushing the document wider than the viewport on
+          narrow phones. */}
+      <body
+        className="min-h-full flex flex-col font-sans"
+        style={{ background: '#0a0a0d', color: '#fafafa', overflowX: 'hidden' }}
+      >
         {children}
       </body>
     </html>

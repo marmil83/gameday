@@ -1090,19 +1090,23 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
 
       {/* Ticket CTA + Share */}
       <div className="px-6 pb-6">
-        <div className="flex items-stretch gap-2">
+        <div className="flex items-stretch gap-2 min-w-0">
           <button
             onClick={() => setShowTickets(!showTickets)}
-            className="flex-1 flex items-center justify-between py-3.5 px-5 font-semibold text-sm transition-all duration-150 active:scale-[0.98]"
+            className="flex-1 min-w-0 flex items-center justify-between gap-2 py-3.5 px-4 font-semibold text-sm transition-all duration-150 active:scale-[0.98]"
             style={{
               background: '#fafafa',
               color: '#0a0a0d',
               borderRadius: '100px',
             }}
           >
-            <span>{lowestPrice ? `Lock it in · from $${lowestPrice}` : 'See tickets'}</span>
+            {/* min-w-0 + truncate keeps the row from blowing past viewport
+                width when a 4-digit price + slang prefix lands on a narrow
+                phone. The "from" word was the tipping point — dropping it
+                shaves ~25px and still reads natural. */}
+            <span className="truncate">{lowestPrice ? `Lock it in · $${lowestPrice}` : 'See tickets'}</span>
             <svg
-              className={`w-4 h-4 transition-transform duration-200 ${showTickets ? 'rotate-180' : ''}`}
+              className={`w-4 h-4 shrink-0 transition-transform duration-200 ${showTickets ? 'rotate-180' : ''}`}
               fill="none" viewBox="0 0 24 24" stroke="currentColor"
             >
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
@@ -1118,7 +1122,7 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
             aria-label={isWatching ? 'Already watching this game' : 'Get price-drop alerts'}
             className="shrink-0 flex items-center justify-center transition-all duration-150 active:scale-[0.95]"
             style={{
-              width: '52px',
+              width: '44px',
               background: isWatching ? 'rgba(52,199,89,0.14)' : '#262630',
               color: isWatching ? '#34c759' : '#fafafa',
               borderRadius: '100px',
@@ -1138,7 +1142,7 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
             aria-label="Share this game"
             className="shrink-0 flex items-center justify-center transition-all duration-150 active:scale-[0.95]"
             style={{
-              width: '52px',
+              width: '44px',
               background: '#262630',
               color: '#fafafa',
               borderRadius: '100px',
