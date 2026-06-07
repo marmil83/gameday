@@ -343,6 +343,80 @@ const LOGO_OVERRIDES: Record<string, string> = {
   'New York Yankees': 'https://a.espncdn.com/i/teamlogos/mlb/500-dark/nyy.png',
 };
 
+// Official team site for each team we currently host. The card's home-team
+// logo links here when an entry exists; teams without a mapping render the
+// logo unlinked. Adding a new team to the DB → add an entry here.
+//
+// WC national teams all point at the canonical 2026 tournament site —
+// the matchup context is the WC, not "Brazil anywhere in the world", and
+// FIFA's per-association pages are sparser than the tournament hub.
+const WC_OFFICIAL = 'https://www.fifa.com/en/tournaments/mens/worldcup/canadamexicousa2026';
+const TEAM_HOMEPAGE: Record<string, string> = {
+  // Detroit
+  'Detroit Tigers':         'https://www.mlb.com/tigers',
+  'Detroit Lions':          'https://www.detroitlions.com',
+  'Detroit Pistons':        'https://www.nba.com/pistons',
+  'Detroit Red Wings':      'https://www.nhl.com/redwings',
+  'Toledo Mud Hens':        'https://www.milb.com/toledo',
+  'Erie SeaWolves':         'https://www.milb.com/erie',
+  'Grand Rapids Griffins':  'https://www.griffinshockey.com',
+  'Detroit City FC':        'https://www.detcityfc.com',
+
+  // Portland
+  'Portland Trail Blazers': 'https://www.nba.com/blazers',
+  'Portland Timbers':       'https://www.timbers.com',
+  'Portland Thorns FC':     'https://www.thorns.com',
+  'Portland Fire':          'https://fire.wnba.com',
+  'Hillsboro Hops':         'https://www.milb.com/hillsboro',
+  'Portland Winterhawks':   'https://winterhawks.com',
+
+  // New York
+  'New York Yankees':       'https://www.mlb.com/yankees',
+  'New York Mets':          'https://www.mlb.com/mets',
+  'New York Knicks':        'https://www.nba.com/knicks',
+  'Brooklyn Nets':          'https://www.nba.com/nets',
+  'New York Rangers':       'https://www.nhl.com/rangers',
+  'New York Islanders':     'https://www.nhl.com/islanders',
+  'New York Giants':        'https://www.giants.com',
+  'New York Jets':          'https://www.newyorkjets.com',
+  'New York City FC':       'https://www.nycfc.com',
+  'New York Red Bulls':     'https://www.newyorkredbulls.com',
+  'New York Liberty':       'https://liberty.wnba.com',
+  'Gotham FC':              'https://gothamfc.com',
+  'NJ/NY Gotham FC':        'https://gothamfc.com',
+
+  // Los Angeles
+  'Los Angeles Dodgers':    'https://www.mlb.com/dodgers',
+  'Los Angeles Angels':     'https://www.mlb.com/angels',
+  'Los Angeles Lakers':     'https://www.nba.com/lakers',
+  'Los Angeles Clippers':   'https://www.nba.com/clippers',
+  'Los Angeles Kings':      'https://www.nhl.com/kings',
+  'Anaheim Ducks':          'https://www.nhl.com/ducks',
+  'Los Angeles Rams':       'https://www.therams.com',
+  'Los Angeles Chargers':   'https://www.chargers.com',
+  'LA Galaxy':              'https://www.lagalaxy.com',
+  'LAFC':                   'https://www.lafc.com',
+  'Los Angeles Sparks':     'https://sparks.wnba.com',
+  'Angel City FC':          'https://angelcity.com',
+
+  // Chicago
+  'Chicago Cubs':           'https://www.mlb.com/cubs',
+  'Chicago White Sox':      'https://www.mlb.com/whitesox',
+  'Chicago Bulls':          'https://www.nba.com/bulls',
+  'Chicago Blackhawks':     'https://www.nhl.com/blackhawks',
+  'Chicago Bears':          'https://www.chicagobears.com',
+  'Chicago Fire FC':        'https://www.chicagofirefc.com',
+  'Chicago Sky':            'https://sky.wnba.com',
+  'Chicago Red Stars':      'https://chicagoredstars.com',
+
+  // FIFA World Cup national teams — all → tournament hub
+  Brazil: WC_OFFICIAL, Morocco: WC_OFFICIAL, France: WC_OFFICIAL,
+  Senegal: WC_OFFICIAL, Norway: WC_OFFICIAL, Ecuador: WC_OFFICIAL,
+  Germany: WC_OFFICIAL, Panama: WC_OFFICIAL, England: WC_OFFICIAL,
+  USA: WC_OFFICIAL, Paraguay: WC_OFFICIAL, Iran: WC_OFFICIAL,
+  'New Zealand': WC_OFFICIAL, Switzerland: WC_OFFICIAL, Belgium: WC_OFFICIAL,
+};
+
 function getPricingLabel(pricing: GameCardType['pricing']): string {
   if (!pricing?.displayed_price) return '';
   return PRICING_LABELS[pricing.pricing_transparency] || 'before fees';
@@ -691,13 +765,33 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
 
           {/* Team info */}
           <div className="flex items-start gap-3 flex-1 min-w-0">
-            {home_team_logo && (
-              <img
-                src={LOGO_OVERRIDES[game.home_team_name] ?? home_team_logo}
-                alt={game.home_team_name}
-                className="w-11 h-11 object-contain shrink-0 mt-1"
-              />
-            )}
+            {home_team_logo && (() => {
+              // Logo links to the team's official site when we have one
+              // mapped; teams without an entry in TEAM_HOMEPAGE render
+              // the logo unlinked (no broken click, no 404 risk).
+              const logoSrc = LOGO_OVERRIDES[game.home_team_name] ?? home_team_logo;
+              const homepage = TEAM_HOMEPAGE[game.home_team_name];
+              const img = (
+                <img
+                  src={logoSrc}
+                  alt={game.home_team_name}
+                  className="w-11 h-11 object-contain shrink-0 mt-1"
+                />
+              );
+              if (!homepage) return img;
+              return (
+                <a
+                  href={homepage}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`${game.home_team_name} official site`}
+                  className="shrink-0 transition-opacity duration-150 hover:opacity-80 active:opacity-60"
+                  onClick={e => e.stopPropagation()}
+                >
+                  {img}
+                </a>
+              );
+            })()}
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium tracking-wider uppercase" style={{ color: '#6b6b78' }}>
                 {game.league === 'FIFA-WC' ? 'World Cup' : game.league} · {formatDate(game.start_time, timezone)}
