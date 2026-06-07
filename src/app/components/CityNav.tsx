@@ -51,7 +51,7 @@ export default function CityNav({ currentCity, onCityChange }: CityNavProps) {
           <button
             key={city.id}
             onClick={() => onCityChange(city.name)}
-            className="shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-150 active:scale-[0.97]"
+            className="shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-150 active:scale-[0.97]"
             style={active
               ? { background: '#1d1d1f', color: '#ffffff' }
               : { background: '#ffffff', color: '#1d1d1f', border: '1px solid rgba(0,0,0,0.1)' }
