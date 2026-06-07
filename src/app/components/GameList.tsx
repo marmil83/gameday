@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { GameCard as GameCardType } from '@/types/database';
 import GameCard from './GameCard';
 import CityNav from './CityNav';
+import CityPicker from './CityPicker';
 
 function formatLocalDate(d: Date): string {
   const year = d.getFullYear();
@@ -38,12 +39,20 @@ function cityFromSlug(slug: string): string {
     .join(' ');
 }
 
-const DEFAULT_CITY = 'Detroit';
-
+// Returns the city to load on first paint, or '' to defer to geo-detection.
+// Priority: explicit ?city= in the URL > previously saved choice in
+// localStorage > '' (triggers /api/detect-city, then the CityPicker if geo
+// can't resolve). No hardcoded default city — we'd rather make the visitor
+// choose than guess wrong.
 function readInitialCity(): string {
-  if (typeof window === 'undefined') return DEFAULT_CITY;
+  if (typeof window === 'undefined') return '';
   const slug = new URLSearchParams(window.location.search).get('city')?.toLowerCase();
-  return slug ? cityFromSlug(slug) : DEFAULT_CITY;
+  if (slug) return cityFromSlug(slug);
+  try {
+    const saved = window.localStorage.getItem('wg_city');
+    if (saved) return saved;
+  } catch { /* private mode etc. */ }
+  return '';
 }
 
 function readInitialDate(): string {
@@ -59,6 +68,30 @@ export default function GameList() {
   const [loading, setLoading] = useState(true);
   const [date, setDate] = useState(readInitialDate);
   const [cityInfo, setCityInfo] = useState({ name: '', state: '', timezone: '' });
+  // True when we've decided the visitor needs to pick a city (geo couldn't
+  // resolve to one of our markets). Blocks the games UI behind a modal.
+  const [needsCityChoice, setNeedsCityChoice] = useState(false);
+
+  // First-visit geo detection. Only fires when we have no city yet (no URL
+  // param, no localStorage). If geo lands on an active market, silently
+  // use it. Otherwise raise the picker.
+  useEffect(() => {
+    if (city) return;
+    let cancelled = false;
+    fetch('/api/detect-city')
+      .then(r => r.json())
+      .then(data => {
+        if (cancelled) return;
+        if (data.city) {
+          setCity(data.city);
+          try { window.localStorage.setItem('wg_city', data.city); } catch {}
+        } else {
+          setNeedsCityChoice(true);
+        }
+      })
+      .catch(() => { if (!cancelled) setNeedsCityChoice(true); });
+    return () => { cancelled = true; };
+  }, [city]);
 
   // Mirror city + date into the URL without reloading the page, so the
   // current view is shareable. replaceState (not pushState) avoids
@@ -66,7 +99,7 @@ export default function GameList() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams();
-    if (city !== DEFAULT_CITY) params.set('city', citySlug(city)); // default city stays clean
+    if (city) params.set('city', citySlug(city));
     if (date) params.set('date', date);
     const qs = params.toString();
     const next = qs ? `?${qs}` : window.location.pathname;
@@ -82,9 +115,14 @@ export default function GameList() {
   const handleCityChange = useCallback((next: string) => {
     setCity(next);
     setDate('');
+    setNeedsCityChoice(false);
+    try { window.localStorage.setItem('wg_city', next); } catch {}
   }, []);
 
   const fetchGames = useCallback(async () => {
+    // No city yet → we're still detecting / waiting for picker. Stay in
+    // loading state so the skeletons render instead of "No games today".
+    if (!city) { setLoading(true); return; }
     setLoading(true);
     try {
       const params = new URLSearchParams({ city });
@@ -118,6 +156,7 @@ export default function GameList() {
 
   return (
     <div className="min-h-screen" style={{ background: '#F2F2F7' }}>
+      {needsCityChoice && <CityPicker onPick={handleCityChange} />}
       {/* Sticky top nav — wordmark + city pills together so the
           supported markets stay visible as the user scrolls through
           games. Detroit + Portland are soft-hidden via
