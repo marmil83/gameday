@@ -155,15 +155,28 @@ export default function GameList() {
   const isToday = !date || date === today;
 
   return (
-    <div className="min-h-screen" style={{ background: '#F2F2F7' }}>
+    <div className="min-h-screen" style={{ background: '#0a0a0d' }}>
       {needsCityChoice && <CityPicker onPick={handleCityChange} />}
       {/* Sticky top nav — wordmark + city pills together so the
           supported markets stay visible as the user scrolls through
           games. Detroit + Portland are soft-hidden via
           cities.is_active=false; flip back on and they auto-reappear. */}
-      <header className="bg-white/85 backdrop-blur-md border-b border-black/5 sticky top-0 z-10">
+      <header
+        className="backdrop-blur-md border-b sticky top-0 z-10"
+        style={{ background: 'rgba(10,10,13,0.78)', borderColor: 'rgba(255,255,255,0.06)' }}
+      >
         <div className="max-w-lg mx-auto px-5 py-3 flex items-center gap-3">
-          <h1 className="text-lg font-semibold tracking-tight shrink-0" style={{ color: '#1d1d1f' }}>WorthGoing</h1>
+          <h1
+            className="text-xl shrink-0"
+            style={{
+              color: '#fafafa',
+              fontFamily: 'var(--font-display)',
+              fontWeight: 700,
+              letterSpacing: '-0.02em',
+            }}
+          >
+            WorthGoing
+          </h1>
           <div className="flex-1 min-w-0">
             <CityNav currentCity={city} onCityChange={handleCityChange} />
           </div>
@@ -172,12 +185,21 @@ export default function GameList() {
 
       {/* Headline + date nav */}
       <div className="max-w-lg mx-auto px-5 pt-8 pb-3">
-        <h2 className="text-3xl font-bold tracking-tight" style={{ color: '#1d1d1f' }}>
+        <h2
+          className="text-4xl tracking-tight"
+          style={{
+            color: '#fafafa',
+            fontFamily: 'var(--font-display)',
+            fontWeight: 700,
+            letterSpacing: '-0.03em',
+            lineHeight: 1.05,
+          }}
+        >
           {isToday
-            ? 'Today\'s Games'
+            ? "Today's Games"
             : new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
         </h2>
-        <p className="text-sm mt-1" style={{ color: '#86868b' }}>
+        <p className="text-sm mt-2" style={{ color: '#7a7a85' }}>
           {cityInfo.name}{cityInfo.state ? `, ${cityInfo.state}` : ''} &middot;{' '}
           {games.length} {games.length === 1 ? 'game' : 'games'}
         </p>
@@ -199,8 +221,8 @@ export default function GameList() {
                 onClick={() => setDate(dStr)}
                 className="px-4 py-1.5 text-sm font-medium rounded-full transition-all duration-200"
                 style={active
-                  ? { background: '#1d1d1f', color: '#ffffff' }
-                  : { background: '#ffffff', color: '#1d1d1f', border: '1px solid rgba(0,0,0,0.1)' }
+                  ? { background: '#fafafa', color: '#0a0a0d' }
+                  : { background: '#1a1a22', color: '#fafafa', border: '1px solid rgba(255,255,255,0.08)' }
                 }
               >
                 {label}
@@ -215,7 +237,7 @@ export default function GameList() {
         {loading ? (
           <div className="space-y-4">
             {[1, 2, 3].map(i => (
-              <div key={i} className="bg-white rounded-3xl h-72 animate-pulse" style={{ opacity: 0.6 }} />
+              <div key={i} className="rounded-3xl h-72 animate-pulse" style={{ background: '#15151c', opacity: 0.6 }} />
             ))}
           </div>
         ) : games.length > 0 ? (
@@ -224,15 +246,15 @@ export default function GameList() {
           ))
         ) : (
           <div className="text-center py-20">
-            <p className="text-lg font-medium" style={{ color: '#86868b' }}>No games today</p>
-            <p className="text-sm mt-1" style={{ color: '#86868b' }}>Try a different date</p>
+            <p className="text-lg font-medium" style={{ color: '#9090a0' }}>No games today</p>
+            <p className="text-sm mt-1" style={{ color: '#7a7a85' }}>Try a different date</p>
           </div>
         )}
       </main>
 
       {/* Footer */}
       <footer className="max-w-lg mx-auto px-5 py-10 text-center">
-        <p className="text-xs" style={{ color: '#aeaeb2' }}>
+        <p className="text-xs" style={{ color: '#52525b' }}>
           Prices may not include all fees. Always verify at checkout.
         </p>
       </footer>

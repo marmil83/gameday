@@ -114,15 +114,15 @@ const PARTNER_LINKS: PartnerLink[] = [
 
 /** Relative time + freshness color from a captured_at ISO timestamp. */
 function freshness(capturedAt: string | null | undefined): { label: string; color: string } {
-  if (!capturedAt) return { label: 'unknown', color: '#aeaeb2' };
+  if (!capturedAt) return { label: 'unknown', color: '#6b6b78' };
   const ageMs = Date.now() - new Date(capturedAt).getTime();
   const mins = Math.floor(ageMs / 60_000);
-  if (mins < 60) return { label: `${Math.max(1, mins)}m ago`, color: '#1f8a3d' };
+  if (mins < 60) return { label: `${Math.max(1, mins)}m ago`, color: '#34c759' };
   const hours = Math.floor(mins / 60);
-  if (hours < 12) return { label: `${hours}h ago`, color: hours <= 4 ? '#1f8a3d' : '#86868b' };
+  if (hours < 12) return { label: `${hours}h ago`, color: hours <= 4 ? '#34c759' : '#86868b' };
   const days = Math.floor(hours / 24);
-  if (days < 1) return { label: `${hours}h ago`, color: '#bf6900' };
-  return { label: `${days}d ago`, color: '#bf6900' };
+  if (days < 1) return { label: `${hours}h ago`, color: '#ffb347' };
+  return { label: `${days}d ago`, color: '#ffb347' };
 }
 
 // Two-row layout (works at any width):
@@ -164,13 +164,13 @@ function TicketSourceRow({
     >
       <SourceFavicon src={favicon} name={name} className="mt-0.5" />
       <div className="flex-1 min-w-0">
-        <span className="text-sm font-medium" style={{ color: '#1d1d1f' }}>{name}</span>
+        <span className="text-sm font-medium" style={{ color: '#fafafa' }}>{name}</span>
         {(isAllin || isCheapest) && (
           <div className="mt-1 flex items-center gap-1.5 flex-wrap">
             {isAllin && (
               <span
                 className="text-[10px] font-bold px-1.5 py-0.5 rounded"
-                style={{ background: 'rgba(31,138,61,0.12)', color: '#1f8a3d', whiteSpace: 'nowrap' }}
+                style={{ background: 'rgba(52,199,89,0.14)', color: '#34c759', whiteSpace: 'nowrap' }}
                 title="Price shown is what you pay — no fees added"
               >
                 ALL-IN
@@ -179,7 +179,7 @@ function TicketSourceRow({
             {isCheapest && (
               <span
                 className="text-[10px] font-semibold uppercase tracking-wide"
-                style={{ color: '#1f8a3d', whiteSpace: 'nowrap' }}
+                style={{ color: '#34c759', whiteSpace: 'nowrap' }}
               >
                 cheapest
               </span>
@@ -190,11 +190,11 @@ function TicketSourceRow({
       <div className="flex flex-col items-end shrink-0 gap-0.5">
         <div className="flex items-center gap-1">
           {price != null ? (
-            <span className="text-sm font-semibold" style={{ color: '#1d1d1f', whiteSpace: 'nowrap' }}>from ${price}</span>
+            <span className="text-sm font-semibold" style={{ color: '#fafafa', whiteSpace: 'nowrap' }}>from ${price}</span>
           ) : (
-            <span className="text-sm" style={{ color: '#86868b', whiteSpace: 'nowrap' }}>Check price</span>
+            <span className="text-sm" style={{ color: '#9090a0', whiteSpace: 'nowrap' }}>Check price</span>
           )}
-          <svg className="w-3.5 h-3.5 ml-0.5" style={{ color: '#aeaeb2' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="w-3.5 h-3.5 ml-0.5" style={{ color: '#6b6b78' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
           </svg>
         </div>
@@ -215,7 +215,7 @@ function SourceFavicon({ src, name, className = '' }: { src: string; name: strin
     return (
       <div
         className={`w-5 h-5 rounded shrink-0 flex items-center justify-center text-[10px] font-bold ${className}`}
-        style={{ background: '#1d1d1f', color: '#fff' }}
+        style={{ background: '#fafafa', color: '#0a0a0d' }}
         aria-hidden="true"
       >
         {name.charAt(0)}
@@ -261,10 +261,20 @@ function formatDate(isoString: string, timezone?: string): string {
 }
 
 function getDealScoreLabel(score: number): string {
-  if (score >= 8) return 'Great Deal';
-  if (score >= 6) return 'Good Deal';
-  if (score >= 4) return 'Fair';
-  return 'Below Avg';
+  if (score >= 8) return 'Lock it in';
+  if (score >= 6) return 'Solid pick';
+  if (score >= 4) return 'Mid';
+  return 'Pass';
+}
+
+// Score → accent color. Mirrors the palette used in the share image so the
+// in-app score circle and the shareable PNG agree visually. Green for great
+// deals, lime for good, amber for fair, red for skip.
+function scoreColor(score: number): string {
+  if (score >= 8) return '#34c759';
+  if (score >= 6) return '#9ad636';
+  if (score >= 4) return '#ff9f0a';
+  return '#ff453a';
 }
 
 function getPricingLabel(pricing: GameCardType['pricing']): string {
@@ -276,15 +286,15 @@ function ScoreBar({ label, score, weight }: { label: string; score: number; weig
   const pct = (score / 10) * 100;
   return (
     <div className="flex items-center gap-3 text-xs">
-      <span className="w-20 shrink-0" style={{ color: '#86868b' }}>{label}</span>
-      <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: '#F2F2F7' }}>
+      <span className="w-20 shrink-0" style={{ color: '#9090a0' }}>{label}</span>
+      <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: '#1f1f28' }}>
         <div
           className="h-full rounded-full transition-all duration-500"
-          style={{ width: `${pct}%`, background: '#1d1d1f' }}
+          style={{ width: `${pct}%`, background: '#fafafa' }}
         />
       </div>
-      <span className="w-8 text-right font-medium" style={{ color: '#1d1d1f' }}>{score.toFixed(1)}</span>
-      <span className="w-8 text-right" style={{ color: '#aeaeb2' }}>{Math.round(weight * 100)}%</span>
+      <span className="w-8 text-right font-medium" style={{ color: '#fafafa' }}>{score.toFixed(1)}</span>
+      <span className="w-8 text-right" style={{ color: '#6b6b78' }}>{Math.round(weight * 100)}%</span>
     </div>
   );
 }
@@ -445,7 +455,7 @@ function getCalloutBanner(
   if (contextFlags.includes('doubleheader'))      return { text: 'Doubleheader', accent: '#5856d6' };
   if (contextFlags.includes('opening-day'))       return { text: 'Opening Day', accent: '#0071e3' };
   if (priceScore >= 9 || tagNames.includes('cheap-night')) return { text: 'Value Game', accent: '#34c759' };
-  if (contextFlags.includes('bad-weather'))       return { text: 'Weather Concern', accent: '#bf6900' };
+  if (contextFlags.includes('bad-weather'))       return { text: 'Weather Concern', accent: '#ffb347' };
   return null;
 }
 
@@ -580,8 +590,13 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
 
   return (
     <div
-      className="bg-white overflow-hidden transition-all duration-200"
-      style={{ borderRadius: '20px', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}
+      className="overflow-hidden transition-all duration-200"
+      style={{
+        background: '#15151c',
+        borderRadius: '20px',
+        border: '1px solid rgba(255,255,255,0.05)',
+        boxShadow: '0 2px 24px rgba(0,0,0,0.35)',
+      }}
     >
       {/* Callout — thin accent bar, not a banner */}
       {callout && (
@@ -607,34 +622,62 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
               />
             )}
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium tracking-wider uppercase" style={{ color: '#aeaeb2' }}>
+              <p className="text-xs font-medium tracking-wider uppercase" style={{ color: '#6b6b78' }}>
                 {game.league} · {formatDate(game.start_time, timezone)}
               </p>
-              <h3 className="mt-1 text-xl font-bold tracking-tight leading-tight" style={{ color: '#1d1d1f' }}>
+              <h3
+                className="mt-1 text-2xl leading-tight"
+                style={{
+                  color: '#fafafa',
+                  fontFamily: 'var(--font-display)',
+                  fontWeight: 700,
+                  letterSpacing: '-0.025em',
+                }}
+              >
                 {game.away_team_name === 'TBD'
-                  ? <span style={{ color: '#aeaeb2', fontStyle: 'italic' }}>Opponent TBD</span>
+                  ? <span style={{ color: '#6b6b78', fontStyle: 'italic' }}>Opponent TBD</span>
                   : game.away_team_name}
               </h3>
-              <p className="text-sm mt-0.5" style={{ color: '#86868b' }}>
+              <p className="text-sm mt-0.5" style={{ color: '#9090a0' }}>
                 @ {game.home_team_name} · {formatTime(game.start_time, timezone)}
               </p>
-              <p className="text-xs mt-0.5" style={{ color: '#aeaeb2' }}>{game.venue}</p>
+              <p className="text-xs mt-0.5" style={{ color: '#6b6b78' }}>{game.venue}</p>
             </div>
           </div>
 
-          {/* Deal Score — clean black circle */}
+          {/* Deal Score — color-graded ring + glow. The score color is the
+              same palette used in the share image, so the in-app card and
+              the shareable PNG read as the same brand object. */}
           <button
             onClick={() => setShowBreakdown(!showBreakdown)}
             className="flex flex-col items-center shrink-0"
             aria-label="Show score breakdown"
           >
             <div
-              className="w-14 h-14 rounded-full flex items-center justify-center transition-transform duration-150 active:scale-95"
-              style={{ background: '#1d1d1f' }}
+              className="w-16 h-16 rounded-full flex items-center justify-center transition-transform duration-150 active:scale-95"
+              style={{
+                background: `${scoreColor(dealScore)}1f`,
+                border: `2px solid ${scoreColor(dealScore)}`,
+                boxShadow: `0 0 22px ${scoreColor(dealScore)}45`,
+              }}
             >
-              <span className="text-lg font-bold text-white">{dealScore.toFixed(1)}</span>
+              <span
+                style={{
+                  color: scoreColor(dealScore),
+                  fontFamily: 'var(--font-display)',
+                  fontWeight: 700,
+                  fontSize: '22px',
+                  letterSpacing: '-0.02em',
+                  lineHeight: 1,
+                }}
+              >
+                {dealScore.toFixed(1)}
+              </span>
             </div>
-            <span className="text-[10px] font-medium mt-1.5" style={{ color: '#86868b' }}>
+            <span
+              className="text-[10px] font-bold mt-2 uppercase tracking-wider"
+              style={{ color: scoreColor(dealScore) }}
+            >
               {getDealScoreLabel(dealScore)}
             </span>
           </button>
@@ -643,10 +686,10 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
 
       {/* Score Breakdown */}
       {showBreakdown && score && (
-        <div className="mx-6 mb-4 px-4 py-4 rounded-2xl space-y-2.5" style={{ background: '#F2F2F7' }}>
+        <div className="mx-6 mb-4 px-4 py-4 rounded-2xl space-y-2.5" style={{ background: '#1f1f28' }}>
           <div className="flex items-center justify-between mb-1">
-            <span className="text-xs font-semibold" style={{ color: '#1d1d1f' }}>Score Breakdown</span>
-            <span className="text-[10px]" style={{ color: '#aeaeb2' }}>score · weight</span>
+            <span className="text-xs font-semibold" style={{ color: '#fafafa' }}>Score Breakdown</span>
+            <span className="text-[10px]" style={{ color: '#6b6b78' }}>score · weight</span>
           </div>
           <ScoreBar label="Price" score={Number(score.price_score) || 0} weight={0.4} />
           <ScoreBar label="Experience" score={Number(score.experience_score) || 0} weight={0.2} />
@@ -656,7 +699,7 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
             <ScoreBar label="Weather" score={Number(score.context_score) || 0} weight={0.1} />
           )}
           {score.reasoning_summary && (
-            <p className="text-[11px] pt-2 border-t" style={{ color: '#86868b', borderColor: 'rgba(0,0,0,0.06)' }}>
+            <p className="text-[11px] pt-2 border-t" style={{ color: '#9090a0', borderColor: 'rgba(255,255,255,0.06)' }}>
               {score.reasoning_summary}
             </p>
           )}
@@ -664,7 +707,7 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
       )}
 
       {/* Divider */}
-      <div className="mx-6" style={{ height: '1px', background: 'rgba(0,0,0,0.05)' }} />
+      <div className="mx-6" style={{ height: '1px', background: 'rgba(255,255,255,0.06)' }} />
 
       {/* Price + Weather */}
       <div className="px-6 py-4 flex items-start justify-between">
@@ -672,10 +715,18 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
           {lowestPrice ? (
             <>
               <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-bold tracking-tight" style={{ color: isGreatDeal ? '#1f8a3d' : '#1d1d1f' }}>
+                <span
+                  className="text-4xl"
+                  style={{
+                    color: isGreatDeal ? '#34c759' : '#fafafa',
+                    fontFamily: 'var(--font-display)',
+                    fontWeight: 700,
+                    letterSpacing: '-0.03em',
+                  }}
+                >
                   ${lowestPrice}
                 </span>
-                <span className="text-xs" style={{ color: '#86868b' }}>
+                <span className="text-xs" style={{ color: '#9090a0' }}>
                   from · {getPricingLabel(pricing)}
                 </span>
               </div>
@@ -684,25 +735,25 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
                   <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="#1f8a3d" strokeWidth={3}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
                   </svg>
-                  <span className="text-xs font-semibold" style={{ color: '#1f8a3d' }}>
+                  <span className="text-xs font-semibold" style={{ color: '#34c759' }}>
                     {savings.pct}% below typical {game.league} (${savings.avg})
                   </span>
                 </div>
               ) : insights?.price_insight ? (
-                <p className="text-xs mt-1" style={{ color: '#86868b' }}>{insights.price_insight}</p>
+                <p className="text-xs mt-1" style={{ color: '#9090a0' }}>{insights.price_insight}</p>
               ) : null}
             </>
           ) : (
-            <p className="text-sm" style={{ color: '#aeaeb2' }}>Pricing not yet available</p>
+            <p className="text-sm" style={{ color: '#6b6b78' }}>Pricing not yet available</p>
           )}
         </div>
 
         {insights?.weather_temp_f != null && (
           <div className="text-right">
-            <p className="text-base font-semibold" style={{ color: '#1d1d1f' }}>
+            <p className="text-base font-semibold" style={{ color: '#fafafa' }}>
               {insights.weather_icon} {insights.weather_temp_f}°F
             </p>
-            <p className="text-xs mt-0.5" style={{ color: '#86868b' }}>{insights.weather_condition}</p>
+            <p className="text-xs mt-0.5" style={{ color: '#9090a0' }}>{insights.weather_condition}</p>
           </div>
         )}
       </div>
@@ -712,14 +763,14 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
         <div className="px-6 pb-3 flex items-center gap-3 flex-wrap text-xs">
           {/* Parking */}
           <div className="flex items-center gap-1.5">
-            <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} style={{ color: '#86868b' }}>
+            <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} style={{ color: '#9090a0' }}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 17V7h4a3 3 0 010 6h-4M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z" />
             </svg>
             {venue.parking.free ? (
-              <span className="font-medium" style={{ color: '#1f8a3d' }}>Free parking</span>
+              <span className="font-medium" style={{ color: '#34c759' }}>Free parking</span>
             ) : (
-              <span style={{ color: '#1d1d1f' }}>
-                Parking <span className="text-[#86868b]">~${venue.parking.typical}</span>
+              <span style={{ color: '#fafafa' }}>
+                Parking <span style={{ color: '#7a7a85' }}>~${venue.parking.typical}</span>
               </span>
             )}
           </div>
@@ -727,7 +778,7 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
           {/* Transit — shown when accessible AND the rating is meaningful */}
           {venue.transit.available && (venue.transit.rating === 'excellent' || venue.transit.rating === 'good') && (
             <>
-              <span style={{ color: '#d2d2d7' }}>·</span>
+              <span style={{ color: '#3a3a45' }}>·</span>
               <div className="flex items-center gap-1.5">
                 <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} style={{ color: '#0071e3' }}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
@@ -751,7 +802,7 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
       {dedupedPromos.length > 0 ? (
         <div
           className="mx-6 mb-4 px-4 py-3 rounded-2xl"
-          style={{ background: '#FFF9EC', border: '1px solid rgba(255,149,0,0.15)' }}
+          style={{ background: 'rgba(255,159,10,0.06)', border: '1px solid rgba(255,159,10,0.18)' }}
         >
           {dedupedPromos.map((promo, i) => {
             const isFirst = i === 0;
@@ -767,17 +818,17 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
             return (
               <div
                 key={`${promo.promo_type}-${promo.promo_item ?? ''}-${i}`}
-                className={`flex items-start gap-3 ${isFirst ? '' : 'mt-2.5 pt-2.5 border-t border-[rgba(191,105,0,0.12)]'}`}
+                className={`flex items-start gap-3 ${isFirst ? '' : 'mt-2.5 pt-2.5 border-t border-[rgba(255,159,10,0.14)]'}`}
               >
-                <div className="shrink-0 mt-0.5" style={{ color: '#bf6900' }}>
+                <div className="shrink-0 mt-0.5" style={{ color: '#ffb347' }}>
                   <PromoIcon type={promo.promo_type} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#bf6900' }}>
+                  <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#ffb347' }}>
                     {getPromoTitle(promo)}
                   </p>
                   {detail && (
-                    <p className="text-xs mt-1 leading-snug" style={{ color: '#8a5500' }}>
+                    <p className="text-xs mt-1 leading-snug" style={{ color: '#ffd180' }}>
                       {detail}
                     </p>
                   )}
@@ -794,16 +845,16 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
         // item once it's confirmed.
         <div
           className="mx-6 mb-4 px-4 py-3 rounded-2xl flex items-start gap-3"
-          style={{ background: '#FFF9EC', border: '1px solid rgba(255,149,0,0.15)' }}
+          style={{ background: 'rgba(255,159,10,0.06)', border: '1px solid rgba(255,159,10,0.18)' }}
         >
-          <div className="shrink-0 mt-0.5" style={{ color: '#bf6900' }}>
+          <div className="shrink-0 mt-0.5" style={{ color: '#ffb347' }}>
             <PromoIcon type="giveaway" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#bf6900' }}>
+            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#ffb347' }}>
               Playoff giveaway expected
             </p>
-            <p className="text-xs mt-1 leading-snug" style={{ color: '#8a5500' }}>
+            <p className="text-xs mt-1 leading-snug" style={{ color: '#ffd180' }}>
               Item TBD — check the team&rsquo;s site closer to game day.
             </p>
           </div>
@@ -814,7 +865,7 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
           Kept bold so it reads as the headline / pull-quote. */}
       {insights?.verdict && (
         <div className="px-6 pb-3">
-          <p className="text-sm font-semibold leading-snug" style={{ color: '#1d1d1f' }}>
+          <p className="text-sm font-semibold leading-snug" style={{ color: '#fafafa' }}>
             {insights.verdict}
           </p>
         </div>
@@ -827,7 +878,7 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
           (recommendation vs. specific reason). */}
       {insights?.why_worth_it && (
         <div className="px-6 pb-4">
-          <p className="text-sm leading-relaxed" style={{ color: '#86868b' }}>
+          <p className="text-sm leading-relaxed" style={{ color: '#9090a0' }}>
             {insights.why_worth_it}
           </p>
         </div>
@@ -840,12 +891,12 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
             onClick={() => setShowTickets(!showTickets)}
             className="flex-1 flex items-center justify-between py-3.5 px-5 font-semibold text-sm transition-all duration-150 active:scale-[0.98]"
             style={{
-              background: '#1d1d1f',
-              color: '#ffffff',
+              background: '#fafafa',
+              color: '#0a0a0d',
               borderRadius: '100px',
             }}
           >
-            <span>{lowestPrice ? `Get Tickets · from $${lowestPrice}` : 'View Tickets'}</span>
+            <span>{lowestPrice ? `Lock it in · from $${lowestPrice}` : 'See tickets'}</span>
             <svg
               className={`w-4 h-4 transition-transform duration-200 ${showTickets ? 'rotate-180' : ''}`}
               fill="none" viewBox="0 0 24 24" stroke="currentColor"
@@ -863,9 +914,10 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
             className="shrink-0 flex items-center justify-center transition-all duration-150 active:scale-[0.95]"
             style={{
               width: '52px',
-              background: '#F2F2F7',
-              color: '#1d1d1f',
+              background: '#262630',
+              color: '#fafafa',
               borderRadius: '100px',
+              border: '1px solid rgba(255,255,255,0.05)',
             }}
           >
             {shareState === 'working' ? (
@@ -886,10 +938,10 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
         </div>
 
         {showTickets && (
-          <div className="mt-3 rounded-2xl overflow-hidden" style={{ background: '#F2F2F7' }}>
+          <div className="mt-3 rounded-2xl overflow-hidden" style={{ background: '#1f1f28' }}>
             {/* Unified comparison — every source as a first-class row */}
             <div className="px-4 pt-3 pb-1">
-              <p className="text-[10px] font-medium uppercase tracking-wider" style={{ color: '#aeaeb2' }}>
+              <p className="text-[10px] font-medium uppercase tracking-wider" style={{ color: '#6b6b78' }}>
                 Compare prices
               </p>
             </div>
@@ -908,7 +960,7 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
               ))}
             </div>
             <div className="px-4 pt-2 pb-3">
-              <p className="text-[10px] leading-snug" style={{ color: '#aeaeb2' }}>
+              <p className="text-[10px] leading-snug" style={{ color: '#6b6b78' }}>
                 ALL-IN means the price shown is what you pay; otherwise expect fees at checkout. &ldquo;Check price&rdquo; opens that source directly — live pricing for those is coming soon.
               </p>
             </div>

@@ -53,8 +53,8 @@ export default function CityNav({ currentCity, onCityChange }: CityNavProps) {
             onClick={() => onCityChange(city.name)}
             className="shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-150 active:scale-[0.97]"
             style={active
-              ? { background: '#1d1d1f', color: '#ffffff' }
-              : { background: '#ffffff', color: '#1d1d1f', border: '1px solid rgba(0,0,0,0.1)' }
+              ? { background: '#fafafa', color: '#0a0a0d' }
+              : { background: '#1a1a22', color: '#fafafa', border: '1px solid rgba(255,255,255,0.08)' }
             }
           >
             {CITY_SHORT[city.name] ?? city.name}
