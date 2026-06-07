@@ -123,12 +123,11 @@ export default function GameList() {
           games. Detroit + Portland are soft-hidden via
           cities.is_active=false; flip back on and they auto-reappear. */}
       <header className="bg-white/85 backdrop-blur-md border-b border-black/5 sticky top-0 z-10">
-        <div className="max-w-lg mx-auto px-5 pt-3 pb-2">
-          <div className="flex items-baseline justify-between">
-            <h1 className="text-lg font-semibold tracking-tight" style={{ color: '#1d1d1f' }}>WorthGoing</h1>
-            <p className="text-[11px]" style={{ color: '#86868b' }}>Know Before You Go</p>
+        <div className="max-w-lg mx-auto px-5 py-3 flex items-center gap-3">
+          <h1 className="text-lg font-semibold tracking-tight shrink-0" style={{ color: '#1d1d1f' }}>WorthGoing</h1>
+          <div className="flex-1 min-w-0">
+            <CityNav currentCity={city} onCityChange={handleCityChange} />
           </div>
-          <CityNav currentCity={city} onCityChange={handleCityChange} />
         </div>
       </header>
 
