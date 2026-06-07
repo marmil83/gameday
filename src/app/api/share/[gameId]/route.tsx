@@ -107,8 +107,12 @@ export async function GET(
         {/* Matchup row */}
         <div style={{ display: 'flex', alignItems: 'center', marginTop: 40, gap: 28 }}>
           {homeLogo ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={homeLogo} width={96} height={96} style={{ objectFit: 'contain' }} alt="" />
+            // Light chip behind the logo so dark-on-transparent team marks
+            // (Yankees, Cubs, Pistons, …) don't vanish on the near-black bg.
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 96, height: 96, background: 'rgba(255,255,255,0.94)', borderRadius: 20, padding: 8 }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={homeLogo} width={80} height={80} style={{ objectFit: 'contain' }} alt="" />
+            </div>
           ) : (
             <div style={{ width: 96, height: 96, borderRadius: 48, background: '#1c1c22', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#86868b', fontSize: 40, fontWeight: 700 }}>
               {game.home_team_name.charAt(0)}
