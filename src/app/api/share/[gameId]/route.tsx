@@ -69,6 +69,7 @@ export async function GET(
   const pick = <T,>(v: Rel<T>): T | null => (Array.isArray(v) ? (v[0] ?? null) : v);
 
   const score = Number(pick(game.scores as Rel<{ deal_score: number }>)?.deal_score ?? 0);
+  const isWC = game.league === 'FIFA-WC';
   const verdict = pick(game.game_insights as Rel<{ verdict: string }>)?.verdict ?? '';
   const rawHomeLogo = pick(game.home_team as Rel<{ logo_url: string | null }>)?.logo_url ?? null;
   const homeLogo = LOGO_OVERRIDES[game.home_team_name] ?? rawHomeLogo;
@@ -107,7 +108,7 @@ export async function GET(
             <div style={{ fontSize: 18, color: '#86868b', marginTop: 2 }}>Know Before You Go</div>
           </div>
           <div style={{ fontSize: 20, color: '#86868b', textTransform: 'uppercase', letterSpacing: 2 }}>
-            {game.league}
+            {isWC ? 'World Cup' : game.league}
           </div>
         </div>
 
@@ -122,11 +123,14 @@ export async function GET(
             </div>
           )}
           <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {/* WC games store marquee team in home_team_*; swap which side
+                heads the share image so Brazil shows over Morocco, not
+                vice-versa. "vs" replaces "at" for the neutral-venue read. */}
             <div style={{ fontSize: 44, fontWeight: 700, color: '#fff', lineHeight: 1.1 }}>
-              {game.away_team_name}
+              {isWC ? game.home_team_name : game.away_team_name}
             </div>
             <div style={{ fontSize: 28, color: '#a1a1aa', marginTop: 4 }}>
-              {`at ${game.home_team_name}`}
+              {isWC ? `vs ${game.away_team_name}` : `at ${game.home_team_name}`}
             </div>
           </div>
         </div>

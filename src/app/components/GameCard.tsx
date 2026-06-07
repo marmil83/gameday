@@ -454,6 +454,16 @@ function getCalloutBanner(
   // contexts first. Bad weather lives at the bottom — it's the only
   // negative signal so it never trumps a positive one (e.g. a Game 7
   // in the rain still reads as "Game 7").
+  // World Cup stages take priority — the league code already implies WC,
+  // but the callout adds the round-specific weight (Final > QF > R16 > R32
+  // > Group). Colors match the existing severity gradient so visitors
+  // already pattern-match red = "must-see, do-or-die".
+  if (contextFlags.includes('wc-final'))          return { text: 'World Cup Final', accent: '#ff3b30' };
+  if (contextFlags.includes('wc-semifinal'))      return { text: 'Semifinal', accent: '#ff3b30' };
+  if (contextFlags.includes('wc-quarterfinal'))   return { text: 'Quarterfinal', accent: '#ff453a' };
+  if (contextFlags.includes('wc-round-of-16'))    return { text: 'Round of 16', accent: '#ff9500' };
+  if (contextFlags.includes('wc-round-of-32'))    return { text: 'Round of 32', accent: '#ff9500' };
+  if (contextFlags.includes('wc-group'))          return { text: 'Group Stage', accent: '#af52de' };
   if (contextFlags.includes('game-7'))            return { text: 'Game 7', accent: '#ff3b30' };
   if (contextFlags.includes('elimination'))       return { text: 'Elimination Game', accent: '#ff3b30' };
   if (contextFlags.includes('series-finale'))     return { text: 'Series Finale', accent: '#ff3b30' };
@@ -632,7 +642,7 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
             )}
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium tracking-wider uppercase" style={{ color: '#6b6b78' }}>
-                {game.league} · {formatDate(game.start_time, timezone)}
+                {game.league === 'FIFA-WC' ? 'World Cup' : game.league} · {formatDate(game.start_time, timezone)}
               </p>
               <h3
                 className="mt-1 text-2xl leading-tight"
@@ -643,12 +653,22 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
                   letterSpacing: '-0.025em',
                 }}
               >
-                {game.away_team_name === 'TBD'
-                  ? <span style={{ color: '#6b6b78', fontStyle: 'italic' }}>Opponent TBD</span>
-                  : game.away_team_name}
+                {/* For WC games, the MARQUEE team is stored in home_team_*
+                    (so its flag pulls naturally as home_team_logo); the H3
+                    swaps to home_team_name to match. For everything else,
+                    away_team is the visiting marquee. */}
+                {(() => {
+                  const marquee = game.league === 'FIFA-WC' ? game.home_team_name : game.away_team_name;
+                  return marquee === 'TBD'
+                    ? <span style={{ color: '#6b6b78', fontStyle: 'italic' }}>Opponent TBD</span>
+                    : marquee;
+                })()}
               </h3>
               <p className="text-sm mt-0.5" style={{ color: '#9090a0' }}>
-                @ {game.home_team_name} · {formatTime(game.start_time, timezone)}
+                {game.league === 'FIFA-WC'
+                  ? `vs ${game.away_team_name}`
+                  : `@ ${game.home_team_name}`}
+                {' · '}{formatTime(game.start_time, timezone)}
               </p>
               <p className="text-xs mt-0.5" style={{ color: '#6b6b78' }}>{game.venue}</p>
             </div>
