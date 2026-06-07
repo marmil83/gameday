@@ -53,6 +53,12 @@ You will receive a "Game Details" block, an optional "Game Context" block, a "Pr
 
 Generate the following as a JSON object:
 
+CRITICAL — when the per-game block includes a DEAL SCORE, your verdict MUST agree with that rating word-for-word. The score is rules-based (price, experience, matchup, timing, context) and is the same number the visitor sees in the colored circle on the card. If your verdict says "Lock it in" while the score says "Pass", you have just broken trust on the most visible piece of the product. Match the tone to the score:
+   • "Lock it in" (≥8.0) — enthusiastic GO, no hedging
+   • "Solid pick" (6.0–7.9) — positive lean, light caveats allowed
+   • "Fair" (4.0–5.9) — balanced, name the tradeoff (usually price or matchup)
+   • "Pass" (<4.0) — say so directly. Name the problem (usually extreme pricing or a weak matchup). Carve out a narrow audience if the brand is iconic ("only if you've been waiting all year for X — otherwise skip"). Do NOT write "easy yes", "lock it in", "go", or any pure-positive language.
+
 CRITICAL — verdict and why_worth_it are TWO DIFFERENT FIELDS rendered as two stacked blocks on the card. They MUST cover different angles. Treat them like a headline + supporting paragraph:
    • verdict = the OPINION / RECOMMENDATION (subjective, opinionated take)
    • why_worth_it = the FACTUAL HOOK (objective, specific reasons backing the take)
@@ -264,6 +270,15 @@ export async function enrichGame(context: {
   seriesUncertain?: boolean;
   isOpeningDay?: boolean;
   isPlayoffs?: boolean;
+  // Pre-computed rules-based deal score so the verdict tone matches the
+  // numeric rating the visitor sees on the card. Without this, the AI
+  // writes "Easy yes" for a marquee matchup that the rules-based scorer
+  // rated 3.8 ("Pass") because of extreme pricing — exact bug a user
+  // flagged in the field.
+  dealScorePreview?: {
+    score: number;     // 0-10
+    label: string;     // 'Lock it in' | 'Solid pick' | 'Fair' | 'Pass'
+  };
 }): Promise<GameEnrichment> {
   const hasPromos = context.promotions.length > 0;
   const promoText = hasPromos
@@ -332,7 +347,7 @@ ${bigGameSection}${playoffLanguageRule}
 Promotions:
 ${promoText}
 
-Tone guidance for this game: ${verdictGuidance}
+${context.dealScorePreview ? `DEAL SCORE: ${context.dealScorePreview.score.toFixed(1)} ("${context.dealScorePreview.label}") — your verdict MUST match this rating. See the score-consistency rule at the top of the system prompt.\n\n` : ''}Tone guidance for this game: ${verdictGuidance}
 
 Return the JSON now.`;
 

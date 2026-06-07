@@ -37,6 +37,17 @@ function priceBucket(p: number | null | undefined): string {
   return Math.round(Math.log10(p) * 10).toString();
 }
 
+// Mirrors getDealScoreLabel() in src/app/components/GameCard.tsx and
+// scoreLabel() in /api/share/[gameId]. Kept in sync by convention —
+// when these labels change, update all three sites OR extract to a
+// shared module. For now the duplication is contained (4 strings).
+function labelForScore(score: number): string {
+  if (score >= 8) return 'Lock it in';
+  if (score >= 6) return 'Solid pick';
+  if (score >= 4) return 'Fair';
+  return 'Pass';
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // ESPN team-schedule helper for the home-opener fallback check.
 // Cached per-process so repeated lookups in the same pipeline run
@@ -429,6 +440,11 @@ export async function enrichSingleGame(gameId: string, force = false): Promise<v
     seriesGameNumber: bigGame.seriesGameNumber,
     seriesUncertain,
     playoffRound: playoffRoundForPrompt,
+    // Bump this when the prompt changes in a way that should invalidate
+    // cached enrichments. score-tone-v1: rolled out the deal-score-aware
+    // verdict tone rule, so every existing row needs re-enrichment to
+    // pick up the new alignment.
+    promptVersion: 'score-tone-v1',
   });
   const inputHash = createHash('sha256').update(inputFingerprint).digest('hex').slice(0, 12);
 
@@ -436,6 +452,40 @@ export async function enrichSingleGame(gameId: string, force = false): Promise<v
     console.log(`[Enrich] Skip ${gameId} — inputs unchanged (hash=${inputHash}, age=${Math.round(existingAgeMs / 3600_000)}h)`);
     return;
   }
+
+  // 0.5. Pre-compute a provisional deal score using ESPN-only big-game
+  // flags (Claude hasn't run yet, so we don't know what it'll flag).
+  // We pass the label to Claude so its verdict tone matches the rating
+  // the visitor sees on the card — closes the bug where the rules-based
+  // scorer says "Pass" (3.8) on a premium-priced Yankees-Red Sox game
+  // while Claude writes "Easy yes — always worth it" from a separate
+  // mental model.
+  //
+  // The FINAL score is recomputed after enrichment (line below 530) with
+  // Claude's context_flags merged in, which can shift the score slightly
+  // for edge cases where Claude flagged something ESPN missed. For
+  // normal-season games the two scores agree to within ±0.5, which is
+  // enough that the verdict tone stays consistent with the displayed
+  // score even if the number nudges across a label boundary.
+  const provisionalScore = calculateDealScore({
+    game: game as Game,
+    pricing,
+    promotions,
+    isOutdoor,
+    weatherScore: boostedWeatherScore,
+    teamQuality: boostedTeamQuality,
+    isPlayoffs: isPlayoffsForPrompt,
+    isElimination: isEliminationForPrompt,
+    isOpeningDay: bigGame.isOpeningDay,
+    playoffRound: playoffRoundForPrompt,
+    isRivalry: bigGame.isRivalry,
+    timezone: tz,
+    homeLast10,
+    awayLast10,
+    homeWinPct: homeTeam?.win_pct != null ? Number(homeTeam.win_pct) : null,
+    awayWinPct: awayTeam?.win_pct != null ? Number(awayTeam.win_pct) : null,
+  });
+  const provisionalLabel = labelForScore(provisionalScore.deal_score);
 
   // 1. AI Enrichment — pass big game context so copy leads with stakes
   const enrichment = await enrichGame({
@@ -497,6 +547,13 @@ export async function enrichSingleGame(gameId: string, force = false): Promise<v
     seriesUncertain,
     isOpeningDay: isHomeOpener,
     isPlayoffs: isPlayoffsForPrompt,
+    // Pass the provisional score + label so the verdict tone matches
+    // the rating on the card (see comment on calculateDealScore call
+    // above).
+    dealScorePreview: {
+      score: provisionalScore.deal_score,
+      label: provisionalLabel,
+    },
   });
 
   // 2. Combine ESPN detection with Claude's returned context_flags.
