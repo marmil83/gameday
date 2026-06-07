@@ -176,11 +176,16 @@ export default function AlertModal({ gameId, matchupTitle, onClose, onSubscribed
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   placeholder="you@example.com"
-                  className="w-full px-4 py-3 rounded-2xl text-sm focus:outline-none"
+                  className="w-full px-4 py-3 rounded-2xl focus:outline-none"
+                  // fontSize MUST be ≥16px on iOS Safari or focusing the
+                  // field triggers an auto-zoom that scales the whole page.
+                  // text-sm (14px) was the culprit; 16px inline keeps the
+                  // intent obvious without touching the rest of the design.
                   style={{
                     background: '#1f1f28',
                     color: '#fafafa',
                     border: '1px solid rgba(255,255,255,0.08)',
+                    fontSize: '16px',
                   }}
                 />
               )}
