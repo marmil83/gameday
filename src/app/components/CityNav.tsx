@@ -13,6 +13,18 @@ interface CityNavProps {
   onCityChange: (city: string) => void;
 }
 
+// Short labels for the header pills — full names don't fit on narrow
+// phones. Keys are the canonical city name in the DB. Falls back to the
+// full name if a city isn't in the map (so newly-added cities still render
+// — they just won't be tight until we add an abbreviation here).
+const CITY_SHORT: Record<string, string> = {
+  'New York': 'NY',
+  'Los Angeles': 'LA',
+  Chicago: 'CHI',
+  Detroit: 'DET',
+  Portland: 'PDX',
+};
+
 // Replaces the old dropdown-style CitySelector with a horizontal pill row.
 // With only a handful of cities active, "tap to switch" beats "open menu →
 // pick" — and visually broadcasts which markets we cover. When the city
@@ -45,7 +57,7 @@ export default function CityNav({ currentCity, onCityChange }: CityNavProps) {
               : { background: '#ffffff', color: '#1d1d1f', border: '1px solid rgba(0,0,0,0.1)' }
             }
           >
-            {city.name}
+            {CITY_SHORT[city.name] ?? city.name}
           </button>
         );
       })}
