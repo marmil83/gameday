@@ -121,7 +121,22 @@ export default function AlertModal({ gameId, matchupTitle, onClose, onSubscribed
                 ? (autoActivated ? "You're watching ✓" : "Check your email")
                 : "Get price-drop alerts"}
             </h2>
-            <p className="text-sm mt-1.5" style={{ color: '#9090a0' }}>
+            {/* Matchup chip — visible in every state so visitors can
+                confirm WHICH game they're signing up for / confirming.
+                Lives below the headline as a chip (not in the body copy)
+                so a long team name never inflates the description to 3
+                lines, which collapsed the modal earlier. */}
+            <div
+              className="inline-flex items-center mt-2 px-2.5 py-1 rounded-md text-xs font-medium max-w-full"
+              style={{
+                background: '#1f1f28',
+                color: '#fafafa',
+                border: '1px solid rgba(255,255,255,0.06)',
+              }}
+            >
+              <span className="truncate">{matchupTitle}</span>
+            </div>
+            <p className="text-sm mt-2.5" style={{ color: '#9090a0' }}>
               {done
                 ? (autoActivated
                     ? `We'll email you when tickets drop.`
