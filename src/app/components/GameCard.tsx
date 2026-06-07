@@ -879,7 +879,7 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
               </svg>
             ) : (
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 8l3-3m0 0l3 3m-3-3v12M5 21h14a2 2 0 002-2v-7" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.4 20.6L21 12 3.4 3.4 3 10l13 2-13 2 .4 6.6z" />
               </svg>
             )}
           </button>
