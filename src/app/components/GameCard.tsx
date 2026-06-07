@@ -320,7 +320,7 @@ function formatDate(isoString: string, timezone?: string): string {
 function getDealScoreLabel(score: number): string {
   if (score >= 8) return 'Lock it in';
   if (score >= 6) return 'Solid pick';
-  if (score >= 4) return 'Mid';
+  if (score >= 4) return 'Fair';
   return 'Pass';
 }
 

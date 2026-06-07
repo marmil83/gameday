@@ -14,11 +14,14 @@ import { createServiceClient } from '@/lib/supabase/server';
 // Supabase service client needs Node APIs, so pin the Node runtime.
 export const runtime = 'nodejs';
 
+// Keep in lockstep with getDealScoreLabel() in GameCard.tsx — the share
+// image renders the same label the in-app card does so a shared PNG and
+// the live site agree word-for-word.
 function scoreLabel(s: number): string {
-  if (s >= 8) return 'GREAT DEAL';
-  if (s >= 6) return 'GOOD DEAL';
-  if (s >= 4) return 'FAIR';
-  return 'SKIP IT';
+  if (s >= 8) return 'Lock it in';
+  if (s >= 6) return 'Solid pick';
+  if (s >= 4) return 'Fair';
+  return 'Pass';
 }
 // Per-team logo overrides for teams whose default mark is dark-on-
 // transparent. Keep in sync with GameCard.tsx.
@@ -112,37 +115,63 @@ export async function GET(
           </div>
         </div>
 
-        {/* Matchup row */}
-        <div style={{ display: 'flex', alignItems: 'center', marginTop: 40, gap: 28 }}>
-          {homeLogo ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={homeLogo} width={96} height={96} style={{ objectFit: 'contain' }} alt="" />
-          ) : (
-            <div style={{ width: 96, height: 96, borderRadius: 48, background: '#1c1c22', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#86868b', fontSize: 40, fontWeight: 700 }}>
-              {game.home_team_name.charAt(0)}
-            </div>
-          )}
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            {/* WC games store marquee team in home_team_*; swap which side
-                heads the share image so Brazil shows over Morocco, not
-                vice-versa. "vs" replaces "at" for the neutral-venue read. */}
-            <div style={{ fontSize: 44, fontWeight: 700, color: '#fff', lineHeight: 1.1 }}>
-              {isWC ? game.home_team_name : game.away_team_name}
-            </div>
-            <div style={{ fontSize: 28, color: '#a1a1aa', marginTop: 4 }}>
-              {isWC ? `vs ${game.away_team_name}` : `at ${game.home_team_name}`}
+        {/* Matchup row (left column) + score ring (right column).
+            Mirrors the in-app card layout: marquee team + logo on the
+            left, color-graded score ring with label underneath on the
+            right. Card uses a 64px ring; share PNG scales up to 220px
+            so the score still dominates at iMessage thumbnail size. */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 44, gap: 40 }}>
+          {/* Matchup column */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 28, flex: 1, minWidth: 0 }}>
+            {homeLogo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={homeLogo} width={96} height={96} style={{ objectFit: 'contain' }} alt="" />
+            ) : (
+              <div style={{ width: 96, height: 96, borderRadius: 48, background: '#1c1c22', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#86868b', fontSize: 40, fontWeight: 700 }}>
+                {game.home_team_name.charAt(0)}
+              </div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {/* WC games store marquee team in home_team_*; swap which side
+                  heads the share image so Brazil shows over Morocco, not
+                  vice-versa. "vs" replaces "at" for the neutral-venue read. */}
+              <div style={{ fontSize: 50, fontWeight: 700, color: '#fff', lineHeight: 1.05, letterSpacing: -1 }}>
+                {isWC ? game.home_team_name : game.away_team_name}
+              </div>
+              <div style={{ fontSize: 28, color: '#a1a1aa', marginTop: 6 }}>
+                {isWC ? `vs ${game.away_team_name}` : `at ${game.home_team_name}`}
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Score + label */}
-        <div style={{ display: 'flex', alignItems: 'flex-end', marginTop: 32, gap: 20 }}>
-          <div style={{ fontSize: 132, fontWeight: 800, color: accent, lineHeight: 0.9 }}>
-            {score.toFixed(1)}
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', marginBottom: 18 }}>
-            <div style={{ fontSize: 30, fontWeight: 700, color: accent, letterSpacing: 1 }}>{label}</div>
-            <div style={{ fontSize: 22, color: '#86868b' }}>WorthGoing Score</div>
+          {/* Score ring + label — color-graded to match the in-app card */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+            <div
+              style={{
+                width: 220,
+                height: 220,
+                borderRadius: 110,
+                background: `${accent}1f`,
+                border: `6px solid ${accent}`,
+                boxShadow: `0 0 60px ${accent}45`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <div style={{ color: accent, fontSize: 92, fontWeight: 700, letterSpacing: -3, lineHeight: 1 }}>
+                {score.toFixed(1)}
+              </div>
+            </div>
+            <div style={{
+              color: accent,
+              fontSize: 24,
+              fontWeight: 700,
+              letterSpacing: 4,
+              textTransform: 'uppercase',
+            }}>
+              {label}
+            </div>
           </div>
         </div>
 
