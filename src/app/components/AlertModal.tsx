@@ -168,7 +168,10 @@ export default function AlertModal({ gameId, matchupTitle, onClose, onSubscribed
                 <input
                   type="email"
                   required
-                  autoFocus
+                  // Intentionally NOT autoFocus — popping the iOS
+                  // keyboard the instant the modal opens collapsed the
+                  // available height, clipping the headline + CTA. The
+                  // visitor sees the whole form first, taps when ready.
                   autoComplete="email"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
