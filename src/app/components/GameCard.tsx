@@ -46,10 +46,21 @@ interface PartnerLink {
     home: string;
     away: string;
     league: string;
+    venue: string;
     gameDate: Date;
     abbreviation: string | null;
     externalIds: Record<string, unknown> | null;
   }) => string;
+}
+
+// Map WC venues to each partner's market-slug convention. MetLife sits in
+// New Jersey but the host-city marketing label is "NY/NJ" — SeatGeek and
+// Vivid both surface the local inventory under "new york" / "nyc".
+function wcCitySlug(venue: string): 'nyc' | 'la' {
+  return venue?.toLowerCase().includes('sofi') ? 'la' : 'nyc';
+}
+function wcCityLabel(slug: 'nyc' | 'la'): string {
+  return slug === 'la' ? 'los angeles' : 'new york';
 }
 
 // Lowercase-hyphen team slug shared by most marketplaces.
@@ -58,20 +69,30 @@ function teamSlug(name: string): string {
 }
 
 // For league === 'FIFA-WC', the regular team-page URL patterns don't
-// apply — national teams aren't on platforms as performers, and Brazil's
-// MetLife match doesn't live at /brazil-tickets/ anywhere. Instead we
-// point each partner at their dedicated 2026 World Cup landing page (or
-// a matchup search for partners without one). All landing pages verified
-// 200 on a desktop UA at the time of writing — Vivid uses site search
-// because no landing page exists; SeatGeek returns 403 on HEAD requests
-// (bot-blocked) but the page renders in a real browser.
-const WC_PARTNER_URL: Record<string, (home: string, away: string) => string> = {
-  StubHub:        () => 'https://www.stubhub.com/fifa-world-cup-tickets',
-  'Vivid Seats':  (home, away) => `https://www.vividseats.com/search?searchTerm=${encodeURIComponent(`${home} ${away} world cup`)}`,
-  Gametime:       () => 'https://gametime.co/fifa-world-cup-tickets',
-  SeatGeek:       () => 'https://seatgeek.com/2026-fifa-world-cup-tickets',
-  Ticketmaster:   (home, away) => `https://www.ticketmaster.com/search?q=${encodeURIComponent(`${home} ${away} world cup`)}`,
-  TickPick:       () => 'https://www.tickpick.com/2026-world-cup-tickets/',
+// apply — national teams aren't on platforms as performers. Each partner
+// gets routed to its real World Cup landing/grouping/performer page (all
+// verified by hand against the venue inventory). Where a partner has
+// city-specific WC pages (SeatGeek's /nyc · /la, Vivid's site search)
+// we pass the host city slug so visitors land on inventory for the right
+// market instead of the whole tournament.
+const WC_PARTNER_URL: Record<string, (cityKey: 'nyc' | 'la') => string> = {
+  // StubHub's "world-cup-tickets/grouping/45410" is their entire WC catalog
+  // sorted by date. No per-city variant we found.
+  StubHub:       () => 'https://www.stubhub.com/world-cup-tickets/grouping/45410',
+  // Vivid has no dedicated WC page — site search with city qualifier
+  // returns the right inventory in real browsers.
+  'Vivid Seats': (cityKey) =>
+    `https://www.vividseats.com/search?searchTerm=${encodeURIComponent(`world cup ${wcCityLabel(cityKey)}`)}`,
+  // Gametime exposes World Cup as a performer ("soccerworldcup") under
+  // their 2026-fifa-world-cup-tickets root.
+  Gametime:     () => 'https://gametime.co/2026-fifa-world-cup-tickets/performers/soccerworldcup',
+  // SeatGeek has city-specific WC pages — /nyc for MetLife, /la for SoFi.
+  // HEAD requests 403 (bot-blocked) but the path renders in browsers.
+  SeatGeek:     (cityKey) => `https://seatgeek.com/fifa-world-cup-tickets/${cityKey}`,
+  // Ticketmaster has FIFA as a performer with artist_id 4067734.
+  Ticketmaster: () => 'https://www.ticketmaster.com/2026-world-cup-tickets/artist/4067734',
+  // TickPick's all-WC soccer page.
+  TickPick:     () => 'https://www.tickpick.com/soccer/world-cup-soccer-tickets/',
 };
 
 const PARTNER_LINKS: PartnerLink[] = [
@@ -79,8 +100,8 @@ const PARTNER_LINKS: PartnerLink[] = [
     name: 'StubHub',
     favicon: 'https://www.stubhub.com/favicon.ico',
     // Team page reliably shows the team's full upcoming schedule.
-    getUrl: ({ home, away, league }) => league === 'FIFA-WC'
-      ? WC_PARTNER_URL.StubHub(home, away)
+    getUrl: ({ home, league, venue }) => league === 'FIFA-WC'
+      ? WC_PARTNER_URL.StubHub(wcCitySlug(venue))
       : `https://www.stubhub.com/${teamSlug(home)}-tickets/`,
   },
   {
@@ -89,8 +110,8 @@ const PARTNER_LINKS: PartnerLink[] = [
     // Reverting to their site search — the league/<team> path returns a
     // soft-404 ("we can't find that page") for most teams despite a 200
     // HTTP status. Search at least surfaces the team's upcoming events.
-    getUrl: ({ home, away, league }) => league === 'FIFA-WC'
-      ? WC_PARTNER_URL['Vivid Seats'](home, away)
+    getUrl: ({ home, league, venue }) => league === 'FIFA-WC'
+      ? WC_PARTNER_URL['Vivid Seats'](wcCitySlug(venue))
       : `https://www.vividseats.com/search?searchTerm=${encodeURIComponent(home)}`,
   },
   {
@@ -99,8 +120,8 @@ const PARTNER_LINKS: PartnerLink[] = [
     // Gametime's team page is /<team-slug>-tickets/performers/<league><abbrev>
     // (e.g. mlbdet for Detroit Tigers). Deterministic from our team
     // abbreviation column. Falls back to search if abbreviation is null.
-    getUrl: ({ home, away, league, abbreviation }) => {
-      if (league === 'FIFA-WC') return WC_PARTNER_URL.Gametime(home, away);
+    getUrl: ({ home, league, venue, abbreviation }) => {
+      if (league === 'FIFA-WC') return WC_PARTNER_URL.Gametime(wcCitySlug(venue));
       if (abbreviation) {
         const perf = `${league}${abbreviation}`.toLowerCase();
         return `https://gametime.co/${teamSlug(home)}-tickets/performers/${perf}`;
@@ -114,8 +135,8 @@ const PARTNER_LINKS: PartnerLink[] = [
     // Compare-row builder overrides this with the per-game event URL
     // (game.affiliate_url from SeatGeek's API) whenever we have one;
     // this is only the fallback for events SG's API doesn't know about.
-    getUrl: ({ home, away, league }) => league === 'FIFA-WC'
-      ? WC_PARTNER_URL.SeatGeek(home, away)
+    getUrl: ({ home, league, venue }) => league === 'FIFA-WC'
+      ? WC_PARTNER_URL.SeatGeek(wcCitySlug(venue))
       : `https://seatgeek.com/${teamSlug(home)}-tickets`,
   },
   {
@@ -126,8 +147,8 @@ const PARTNER_LINKS: PartnerLink[] = [
     // teams.external_ids.ticketmaster_artist_id via the one-off backfill
     // script (scripts/backfill-ticketmaster-ids.ts). Falls back to
     // /discover/sports search when we don't have the ID cached yet.
-    getUrl: ({ home, away, league, externalIds }) => {
-      if (league === 'FIFA-WC') return WC_PARTNER_URL.Ticketmaster(home, away);
+    getUrl: ({ home, league, venue, externalIds }) => {
+      if (league === 'FIFA-WC') return WC_PARTNER_URL.Ticketmaster(wcCitySlug(venue));
       const artistId = externalIds?.ticketmaster_artist_id;
       if (artistId) {
         return `https://www.ticketmaster.com/${teamSlug(home)}-tickets/artist/${artistId}`;
@@ -142,8 +163,8 @@ const PARTNER_LINKS: PartnerLink[] = [
     // dedicated 2026 World Cup page; for normal teams, the team page.
     name: 'TickPick',
     favicon: 'https://www.tickpick.com/favicon.ico',
-    getUrl: ({ home, away, league }) => league === 'FIFA-WC'
-      ? WC_PARTNER_URL.TickPick(home, away)
+    getUrl: ({ home, league, venue }) => league === 'FIFA-WC'
+      ? WC_PARTNER_URL.TickPick(wcCitySlug(venue))
       : `https://www.tickpick.com/${teamSlug(home)}-tickets/`,
   },
 ];
@@ -626,6 +647,7 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
           home: game.home_team_name,
           away: game.away_team_name,
           league: game.league,
+          venue: game.venue,
           gameDate: new Date(game.start_time),
           abbreviation: data.home_team_abbreviation,
           externalIds: data.home_team_external_ids,
