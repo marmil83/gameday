@@ -287,12 +287,19 @@ export async function enrichSingleGame(gameId: string, force = false): Promise<v
     .single();
   const priorFlags: string[] = (priorInsights?.context_flags as string[]) || [];
   const priorSaysPlayoff = priorFlags.includes('playoff') || priorFlags.includes('elimination') || priorFlags.includes('finals');
-  const priorSaysElim = priorFlags.includes('elimination') || priorFlags.includes('finals');
+  // NB: 'finals' means the SERIES is the Finals, NOT that this game is
+  // an elimination game. Game 3 of a best-of-7 Finals is not elimination.
+  // Only explicit 'elimination' counts here.
+  const priorSaysElim = priorFlags.includes('elimination');
   const priorRound = KNOWN_PLAYOFF_ROUNDS.find(r => priorFlags.includes(r)) ?? null;
 
   // Effective values for the Claude call (combine ESPN with prior-enrichment memory)
   const isPlayoffsForPrompt = bigGame.isPlayoffs || priorSaysPlayoff;
-  const isEliminationForPrompt = bigGame.isElimination || bigGame.isFinals || priorSaysElim;
+  // bigGame.isFinals also means "this is the Finals series", not
+  // "this is an elimination game". Dropped from the elimination chain
+  // for the same reason as the 'finals' flag (Knicks Game 3 of NBA
+  // Finals showed up labeled "Elimination Game" because of this).
+  const isEliminationForPrompt = bigGame.isElimination || priorSaysElim;
   const playoffRoundForPrompt = bigGame.playoffRound ?? priorRound ?? (isPlayoffsForPrompt ? 'first-round' : null);
 
   // Real "home opener" detection — only the team's literal first home game
@@ -503,12 +510,28 @@ export async function enrichSingleGame(gameId: string, force = false): Promise<v
   // claim elimination — even if ESPN's bracket position or Claude's
   // output suggests it. Same applies to game-7 / series-finale flags
   // that imply a specific resolved series state.
+  //
+  // CRITICAL: Claude's "finals" flag indicates the SERIES is the Finals
+  // — it does NOT mean THIS game is an elimination game. Game 3 of a
+  // best-of-7 Finals is never elimination. Don't let `finals` set
+  // isElimination — only an explicit elimination signal (ESPN's flag
+  // or Claude's "elimination" flag) qualifies.
   const isEliminationByAnySource = seriesUncertain
     ? false
-    : (isEliminationForPrompt || claudeFlags.includes('elimination') || claudeFlags.includes('finals'));
-  // Prefer ESPN round (most specific) → prior round → Claude round → default if any source says playoffs
+    : (isEliminationForPrompt || claudeFlags.includes('elimination'));
+  // Round resolution: ESPN (most authoritative) → Claude (fresh, knows
+  // current matchup context) → prior-enrichment memory (stale, only
+  // useful when both ESPN and Claude are silent) → conservative default.
+  //
+  // Used to be `bigGame.playoffRound ?? priorRound ?? claudeRound` —
+  // priorRound winning over Claude meant a series that advanced
+  // (first-round → conference-finals → Finals) kept ALL the prior round
+  // flags forever (Knicks Game 3 of Finals showed up flagged as
+  // "first-round, conference-finals, finals" because each round's flag
+  // stuck around via priorRound). Putting Claude before priorRound
+  // means the freshest round wins.
   const claudeRound = KNOWN_PLAYOFF_ROUNDS.find(r => claudeFlags.includes(r)) ?? null;
-  const effectivePlayoffRound = bigGame.playoffRound ?? priorRound ?? claudeRound ?? (isPlayoffsByAnySource ? 'first-round' : null);
+  const effectivePlayoffRound = bigGame.playoffRound ?? claudeRound ?? priorRound ?? (isPlayoffsByAnySource ? 'first-round' : null);
 
   // 3. Calculate Deal Score with boosted inputs
   const scoreResult = calculateDealScore({
@@ -597,6 +620,14 @@ export async function enrichSingleGame(gameId: string, force = false): Promise<v
     // scheduled. These would put the "Elimination Game" / "Game 7" /
     // "Series Finale" banner on a game whose state isn't yet known.
     if (seriesUncertain && (f === 'elimination' || f === 'game-7' || f === 'series-finale')) return false;
+    // Drop EVERY round slug except the one we resolved as effective.
+    // Without this, a series that advanced (first-round → conf-finals
+    // → finals) accumulated every prior round flag on each enrichment
+    // — Knicks Game 3 of the Finals showed up as
+    // "first-round, conference-finals, finals" simultaneously.
+    if (KNOWN_PLAYOFF_ROUNDS.includes(f as typeof KNOWN_PLAYOFF_ROUNDS[number]) && f !== effectivePlayoffRound) {
+      return false;
+    }
     return true;
   });
   // Strip any prior `_h:` tag and prepend the freshly-computed hash so a
