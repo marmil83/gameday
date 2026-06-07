@@ -9,6 +9,7 @@ INSERT INTO cities (name, state, timezone, is_active) VALUES
   ('Portland', 'OR', 'America/Los_Angeles', true),
   ('Los Angeles', 'CA', 'America/Los_Angeles', true),
   ('New York', 'NY', 'America/New_York', true),
+  ('Chicago', 'IL', 'America/Chicago', true),
   -- "External" is a permanent placeholder for away teams whose markets we don't cover.
   -- teams.city_id is NOT NULL, so any away team we track standings for (e.g. Lakers,
   -- Thunder, Cavs) needs *some* city. They go here, NOT in an MVP city — otherwise

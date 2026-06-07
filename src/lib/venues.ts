@@ -134,6 +134,36 @@ const VENUE_LOGISTICS: Record<string, VenueLogistics> = {
     parking: { typical: 18, range: '15-25' },
     transit: { available: true, rating: 'excellent', notes: 'PATH to Harrison (5-min walk)' }, // same venue as Red Bull Arena, renamed 2024
   },
+
+  // ── Chicago area ──────────────────────────────────────────────────────
+  'Wrigley Field': {
+    parking: { typical: 50, range: '40-65' },
+    transit: { available: true, rating: 'excellent', notes: 'Red Line to Addison (door)' },
+  },
+  'Rate Field': {
+    parking: { typical: 30, range: '25-40' },
+    transit: { available: true, rating: 'excellent', notes: 'Red Line to Sox-35th (5-min walk)' },
+  },
+  'Guaranteed Rate Field': {
+    parking: { typical: 30, range: '25-40' },
+    transit: { available: true, rating: 'excellent', notes: 'Red Line to Sox-35th (5-min walk)' },
+  },
+  'Soldier Field': {
+    parking: { typical: 50, range: '40-70' },
+    transit: { available: true, rating: 'good', notes: 'Metra Electric to Soldier Field stop on event days, or Red/Green Line + walk' },
+  },
+  'United Center': {
+    parking: { typical: 30, range: '25-40' },
+    transit: { available: true, rating: 'limited', notes: 'No L stop nearby — CTA buses 9/19/20/50 or rideshare' },
+  },
+  'Wintrust Arena': {
+    parking: { typical: 28, range: '20-35' },
+    transit: { available: true, rating: 'good', notes: 'Green/Red Line to Cermak-McCormick Place (5-min walk)' },
+  },
+  'SeatGeek Stadium': {
+    parking: { typical: 20 },
+    transit: { available: false, rating: 'none', notes: '' }, // Bridgeview — car-only in practice
+  },
 };
 
 export function getVenueLogistics(venueName: string | null | undefined): VenueLogistics | null {

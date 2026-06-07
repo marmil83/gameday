@@ -75,6 +75,16 @@ const VENUE_COORDS: Record<string, { lat: number; lon: number }> = {
   'Barclays Center': { lat: 40.683, lon: -73.975 },
   'UBS Arena': { lat: 40.696, lon: -73.703 },
   'Prudential Center': { lat: 40.733, lon: -74.171 },
+  // Chicago — outdoor venues drive the weather lookup; indoor ones are
+  // included for log cleanliness so the venue lookup never silently
+  // misses on a Chicago game.
+  'Wrigley Field': { lat: 41.9484, lon: -87.6553 },
+  'Rate Field': { lat: 41.83, lon: -87.6336 },          // formerly Guaranteed Rate Field / U.S. Cellular Field
+  'Guaranteed Rate Field': { lat: 41.83, lon: -87.6336 }, // alias — some feeds still use the old name
+  'Soldier Field': { lat: 41.8623, lon: -87.6167 },
+  'SeatGeek Stadium': { lat: 41.7211, lon: -87.8009 },  // Bridgeview — Stars FC home, also previously Fire FC
+  'United Center': { lat: 41.8807, lon: -87.6742 },
+  'Wintrust Arena': { lat: 41.8525, lon: -87.6219 },
 };
 
 function celsiusToFahrenheit(c: number): number {
