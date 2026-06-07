@@ -568,3 +568,121 @@ export async function attachSeatGeekPricingForCity(
 
   return { matched: totalMatched, skipped: totalSkipped };
 }
+
+// ─────────────────────────────────────────────
+// FIFA WORLD CUP — per-match SeatGeek attachment
+// ─────────────────────────────────────────────
+//
+// The regular attachSeatGeekPricingForCity loop is team-based: each
+// teams.seatgeek_slug → SG performer → match SG events back to ESPN games
+// by home_team_id. National teams don't fit that — there's no
+// "Brazil's home" because they're touring the host country — but SG
+// happens to ship the entire tournament under a single performer
+// (`slug=fifa-world-cup`, id=10400, 104 events) and per-venue venue IDs.
+//
+// So for WC games we instead query by performer+venue.id and match back
+// to our seeded games by exact datetime_utc (within ±15 minutes — SG's
+// kickoff times match FIFA's to the minute, but a small tolerance keeps
+// us safe against TZ rounding). Each match gets:
+//   • games.affiliate_url ← per-event SG URL
+//   • pricing_snapshots row when SG has a live `lowest_price` (it
+//     usually doesn't until weeks before kickoff)
+
+const WC_VENUE_TO_SG_ID: Record<string, number> = {
+  'MetLife Stadium': 1587,
+  'SoFi Stadium': 487036,
+};
+
+export async function attachWCPricingForCity(
+  cityId: string,
+): Promise<{ matched: number; skipped: number }> {
+  const supabase = createServiceClient();
+  const clientId = process.env.SEATGEEK_CLIENT_ID;
+  if (!clientId) return { matched: 0, skipped: 0 };
+
+  const { data: games } = await supabase
+    .from('games')
+    .select('id, venue, start_time, affiliate_url')
+    .eq('city_id', cityId)
+    .eq('league', 'FIFA-WC')
+    .eq('status', 'scheduled');
+
+  if (!games?.length) return { matched: 0, skipped: 0 };
+
+  // Group seeded games by venue so we issue one SG query per stadium,
+  // not one per game.
+  const byVenue = new Map<string, typeof games>();
+  for (const g of games) {
+    const list = byVenue.get(g.venue) ?? [];
+    list.push(g);
+    byVenue.set(g.venue, list);
+  }
+
+  let matched = 0;
+  let skipped = 0;
+
+  for (const [venue, venueGames] of byVenue) {
+    const sgVenueId = WC_VENUE_TO_SG_ID[venue];
+    if (!sgVenueId) { skipped += venueGames.length; continue; }
+
+    const params = new URLSearchParams({
+      'performers.slug':   'fifa-world-cup',
+      'venue.id':          String(sgVenueId),
+      'datetime_utc.gte':  '2026-06-11T00:00:00Z',
+      'datetime_utc.lte':  '2026-07-20T00:00:00Z',
+      per_page:            '40',
+      client_id:           clientId,
+    });
+
+    let sgEvents: SGEvent[] = [];
+    try {
+      const res = await fetch(`${SEATGEEK_BASE}/events?${params}`);
+      if (!res.ok) { skipped += venueGames.length; continue; }
+      const data = await res.json();
+      sgEvents = data.events ?? [];
+    } catch {
+      skipped += venueGames.length;
+      continue;
+    }
+
+    for (const g of venueGames) {
+      const gameMs = new Date(g.start_time).getTime();
+      const match = sgEvents.find(e =>
+        Math.abs(new Date(e.datetime_utc).getTime() - gameMs) < 15 * 60_000
+      );
+      if (!match) { skipped++; continue; }
+
+      // Persist the affiliate URL even when SG has no live price — it's
+      // the per-match deep link, which is the whole reason we're here.
+      if (!g.affiliate_url || g.affiliate_url.includes('seatgeek.com')) {
+        await supabase.from('games').update({ affiliate_url: match.url }).eq('id', g.id);
+      }
+
+      const sgPrice = match.stats?.lowest_price ?? null;
+      if (sgPrice !== null) {
+        await supabase.from('pricing_snapshots')
+          .delete()
+          .eq('game_id', g.id)
+          .eq('source_name', 'seatgeek');
+
+        await supabase.from('pricing_snapshots').insert({
+          game_id:              g.id,
+          source_name:          'seatgeek',
+          lowest_price:         sgPrice,
+          avg_price:            match.stats?.average_price ?? null,
+          median_price:         match.stats?.median_price ?? null,
+          displayed_price:      sgPrice,
+          base_price:           sgPrice,
+          pricing_transparency: 'base_price_only',
+          affiliate_url:        match.url,
+          listing_count:        match.stats?.listing_count ?? null,
+          captured_at:          new Date().toISOString(),
+        });
+      }
+
+      matched++;
+    }
+  }
+
+  return { matched, skipped };
+}
