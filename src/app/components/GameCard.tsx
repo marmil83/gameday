@@ -615,21 +615,21 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
           {/* Team info */}
           <div className="flex items-start gap-3 flex-1 min-w-0">
             {home_team_logo && (
-              // White-tinted chip behind the logo. A bunch of team marks are
-              // dark-on-transparent (Yankees, Cubs, Pistons, Phillies, etc.)
-              // and disappear on the near-black card. Putting every logo on
-              // a consistent light chip is one swap that fixes all of them
-              // without per-team metadata.
-              <div
-                className="w-11 h-11 shrink-0 mt-1 rounded-xl flex items-center justify-center"
-                style={{ background: 'rgba(255,255,255,0.94)', padding: '4px' }}
-              >
-                <img
-                  src={home_team_logo}
-                  alt={game.home_team_name}
-                  className="w-full h-full object-contain"
-                />
-              </div>
+              // Stacked drop-shadows give the logo a thin white outline +
+              // soft halo. Dark-on-transparent marks (Yankees, Cubs,
+              // Pistons, Phillies) suddenly read against the near-black
+              // card; light/colored logos look unchanged because the halo
+              // blends into their existing edges. No visible container,
+              // no per-team metadata.
+              <img
+                src={home_team_logo}
+                alt={game.home_team_name}
+                className="w-11 h-11 object-contain shrink-0 mt-1"
+                style={{
+                  filter:
+                    'drop-shadow(0 0 0.5px rgba(255,255,255,0.95)) drop-shadow(0 0 1.5px rgba(255,255,255,0.6)) drop-shadow(0 0 4px rgba(255,255,255,0.18))',
+                }}
+              />
             )}
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium tracking-wider uppercase" style={{ color: '#6b6b78' }}>

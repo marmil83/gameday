@@ -107,12 +107,23 @@ export async function GET(
         {/* Matchup row */}
         <div style={{ display: 'flex', alignItems: 'center', marginTop: 40, gap: 28 }}>
           {homeLogo ? (
-            // Light chip behind the logo so dark-on-transparent team marks
-            // (Yankees, Cubs, Pistons, …) don't vanish on the near-black bg.
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 96, height: 96, background: 'rgba(255,255,255,0.94)', borderRadius: 20, padding: 8 }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={homeLogo} width={80} height={80} style={{ objectFit: 'contain' }} alt="" />
-            </div>
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={homeLogo}
+              width={96}
+              height={96}
+              style={{
+                objectFit: 'contain',
+                // Multi-stop white halo — pulls dark-on-transparent marks
+                // (Yankees, Cubs, Pistons, …) off the near-black bg.
+                // Satori renders drop-shadow filters; falls back gracefully
+                // if a future version stops supporting it (logo just shows
+                // without the halo — same as before the fix).
+                filter:
+                  'drop-shadow(0 0 1px rgba(255,255,255,0.95)) drop-shadow(0 0 3px rgba(255,255,255,0.55)) drop-shadow(0 0 10px rgba(255,255,255,0.18))',
+              }}
+              alt=""
+            />
           ) : (
             <div style={{ width: 96, height: 96, borderRadius: 48, background: '#1c1c22', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#86868b', fontSize: 40, fontWeight: 700 }}>
               {game.home_team_name.charAt(0)}
