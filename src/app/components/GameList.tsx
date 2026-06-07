@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import type { GameCard as GameCardType } from '@/types/database';
 import GameCard from './GameCard';
 import CityNav from './CityNav';
@@ -166,17 +167,27 @@ export default function GameList() {
         style={{ background: 'rgba(10,10,13,0.78)', borderColor: 'rgba(255,255,255,0.06)' }}
       >
         <div className="max-w-lg mx-auto px-5 py-3 flex items-center gap-3">
-          <h1
-            className="text-xl shrink-0"
-            style={{
-              color: '#fafafa',
-              fontFamily: 'var(--font-display)',
-              fontWeight: 700,
-              letterSpacing: '-0.02em',
-            }}
+          {/* Linking back to "/" clears any ?city=/?date= URL params but
+              the saved city in localStorage still loads, so clicking the
+              wordmark resets the date filter without forcing the visitor
+              through the city picker again. */}
+          <Link
+            href="/"
+            className="shrink-0 transition-opacity duration-150 hover:opacity-80 active:opacity-60"
+            aria-label="WorthGoing — home"
           >
-            WorthGoing
-          </h1>
+            <h1
+              className="text-xl"
+              style={{
+                color: '#fafafa',
+                fontFamily: 'var(--font-display)',
+                fontWeight: 700,
+                letterSpacing: '-0.02em',
+              }}
+            >
+              WorthGoing
+            </h1>
+          </Link>
           <div className="flex-1 min-w-0">
             <CityNav currentCity={city} onCityChange={handleCityChange} />
           </div>
