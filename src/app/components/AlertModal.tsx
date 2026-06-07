@@ -75,15 +75,36 @@ export default function AlertModal({ gameId, matchupTitle, onClose, onSubscribed
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm px-0 sm:px-5">
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm px-0 sm:px-5"
+      onClick={e => {
+        // Tap on the dim backdrop closes — but only if it wasn't a tap
+        // inside the sheet (we stopPropagation there).
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div
-        className="w-full max-w-md rounded-t-3xl sm:rounded-3xl px-7 pt-6 pb-7"
+        className="w-full max-w-md rounded-t-3xl sm:rounded-3xl px-7 pt-3 sm:pt-6"
+        // Bottom padding combines a normal 28px base + the device's safe-
+        // area inset (iPhone home-indicator) + an extra 24px so the green
+        // CTA stays above iOS Safari's floating "domain pill" that hovers
+        // over the viewport bottom and was eating the button in the
+        // screenshot.
         style={{
           background: '#15151c',
           border: '1px solid rgba(255,255,255,0.06)',
           boxShadow: '0 30px 60px rgba(0,0,0,0.6)',
+          paddingBottom: 'calc(28px + env(safe-area-inset-bottom, 0px) + 24px)',
         }}
+        onClick={e => e.stopPropagation()}
       >
+        {/* iOS-style sheet drag handle — visual affordance that this is
+            a bottom sheet you can dismiss. Mobile only. */}
+        <div
+          className="sm:hidden mx-auto mb-4 h-1 w-10 rounded-full"
+          style={{ background: 'rgba(255,255,255,0.18)' }}
+          aria-hidden="true"
+        />
         {/* Header */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
@@ -98,9 +119,9 @@ export default function AlertModal({ gameId, matchupTitle, onClose, onSubscribed
             <p className="text-sm mt-1.5" style={{ color: '#9090a0' }}>
               {done
                 ? (autoActivated
-                    ? `We'll email you when ${matchupTitle} tickets drop.`
-                    : `We sent a confirmation to ${email}. Click the link to start watching ${matchupTitle}.`)
-                : `We'll email you when ${matchupTitle} tickets drop. Unsubscribe anytime.`}
+                    ? `We'll email you when tickets drop.`
+                    : `Sent to ${email}. Click the confirm link to start watching.`)
+                : `We'll email you when tickets drop. Unsubscribe anytime.`}
             </p>
           </div>
           <button
