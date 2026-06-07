@@ -6,6 +6,7 @@ import type { GameCard as GameCardType } from '@/types/database';
 import GameCard from './GameCard';
 import CityNav from './CityNav';
 import CityPicker from './CityPicker';
+import EmptyState from './EmptyState';
 
 function formatLocalDate(d: Date): string {
   const year = d.getFullYear();
@@ -256,10 +257,7 @@ export default function GameList() {
             <GameCard key={gameData.game.id} data={gameData} timezone={cityInfo.timezone} />
           ))
         ) : (
-          <div className="text-center py-20">
-            <p className="text-lg font-medium" style={{ color: '#9090a0' }}>No games today</p>
-            <p className="text-sm mt-1" style={{ color: '#7a7a85' }}>Try a different date</p>
-          </div>
+          <EmptyState cityName={cityInfo.name} />
         )}
       </main>
 
