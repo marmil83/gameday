@@ -20,6 +20,13 @@ function scoreLabel(s: number): string {
   if (s >= 4) return 'FAIR';
   return 'SKIP IT';
 }
+// Teams whose default logo is dark-on-transparent and vanishes on the
+// dark share image. Halo applied only to these. Keep in sync with the
+// matching set in GameCard.tsx.
+const DARK_LOGO_TEAMS = new Set<string>([
+  'New York Yankees',
+]);
+
 // Score → accent color (green great → amber fair → red skip)
 function scoreColor(s: number): string {
   if (s >= 8) return '#34c759';
@@ -114,13 +121,12 @@ export async function GET(
               height={96}
               style={{
                 objectFit: 'contain',
-                // Multi-stop white halo — pulls dark-on-transparent marks
-                // (Yankees, Cubs, Pistons, …) off the near-black bg.
-                // Satori renders drop-shadow filters; falls back gracefully
-                // if a future version stops supporting it (logo just shows
-                // without the halo — same as before the fix).
-                filter:
-                  'drop-shadow(0 0 1px rgba(255,255,255,0.95)) drop-shadow(0 0 3px rgba(255,255,255,0.55)) drop-shadow(0 0 10px rgba(255,255,255,0.18))',
+                // Halo only for teams whose mark would otherwise vanish
+                // against the near-black background.
+                ...(DARK_LOGO_TEAMS.has(game.home_team_name) && {
+                  filter:
+                    'drop-shadow(0 0 1px rgba(255,255,255,0.95)) drop-shadow(0 0 3px rgba(255,255,255,0.55)) drop-shadow(0 0 10px rgba(255,255,255,0.18))',
+                }),
               }}
               alt=""
             />

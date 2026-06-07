@@ -277,6 +277,13 @@ function scoreColor(score: number): string {
   return '#ff453a';
 }
 
+// Teams whose default logo is dark-on-transparent and vanishes on the
+// dark card. Halo applied only to these — every other logo looks cleaner
+// without it. Add a team here when we notice their mark disappearing.
+const DARK_LOGO_TEAMS = new Set<string>([
+  'New York Yankees',
+]);
+
 function getPricingLabel(pricing: GameCardType['pricing']): string {
   if (!pricing?.displayed_price) return '';
   return PRICING_LABELS[pricing.pricing_transparency] || 'before fees';
@@ -615,20 +622,16 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
           {/* Team info */}
           <div className="flex items-start gap-3 flex-1 min-w-0">
             {home_team_logo && (
-              // Stacked drop-shadows give the logo a thin white outline +
-              // soft halo. Dark-on-transparent marks (Yankees, Cubs,
-              // Pistons, Phillies) suddenly read against the near-black
-              // card; light/colored logos look unchanged because the halo
-              // blends into their existing edges. No visible container,
-              // no per-team metadata.
               <img
                 src={home_team_logo}
                 alt={game.home_team_name}
                 className="w-11 h-11 object-contain shrink-0 mt-1"
-                style={{
+                // Halo only for teams whose mark is dark-on-transparent
+                // (see DARK_LOGO_TEAMS). Every other logo is left clean.
+                style={DARK_LOGO_TEAMS.has(game.home_team_name) ? {
                   filter:
                     'drop-shadow(0 0 0.5px rgba(255,255,255,0.95)) drop-shadow(0 0 1.5px rgba(255,255,255,0.6)) drop-shadow(0 0 4px rgba(255,255,255,0.18))',
-                }}
+                } : undefined}
               />
             )}
             <div className="flex-1 min-w-0">
