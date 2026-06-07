@@ -277,12 +277,14 @@ function scoreColor(score: number): string {
   return '#ff453a';
 }
 
-// Teams whose default logo is dark-on-transparent and vanishes on the
-// dark card. Halo applied only to these — every other logo looks cleaner
-// without it. Add a team here when we notice their mark disappearing.
-const DARK_LOGO_TEAMS = new Set<string>([
-  'New York Yankees',
-]);
+// Per-team logo overrides for teams whose default mark is dark-on-
+// transparent and vanishes on the dark card. We use ESPN's `500-dark`
+// variant (a true white-on-transparent version) instead of trying to
+// fake it with a halo or chip. Keep in sync with the matching map in
+// /api/share/[gameId].
+const LOGO_OVERRIDES: Record<string, string> = {
+  'New York Yankees': 'https://a.espncdn.com/i/teamlogos/mlb/500-dark/nyy.png',
+};
 
 function getPricingLabel(pricing: GameCardType['pricing']): string {
   if (!pricing?.displayed_price) return '';
@@ -623,15 +625,9 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
           <div className="flex items-start gap-3 flex-1 min-w-0">
             {home_team_logo && (
               <img
-                src={home_team_logo}
+                src={LOGO_OVERRIDES[game.home_team_name] ?? home_team_logo}
                 alt={game.home_team_name}
                 className="w-11 h-11 object-contain shrink-0 mt-1"
-                // Halo only for teams whose mark is dark-on-transparent
-                // (see DARK_LOGO_TEAMS). Every other logo is left clean.
-                style={DARK_LOGO_TEAMS.has(game.home_team_name) ? {
-                  filter:
-                    'drop-shadow(0 0 0.5px rgba(255,255,255,0.95)) drop-shadow(0 0 1.5px rgba(255,255,255,0.6)) drop-shadow(0 0 4px rgba(255,255,255,0.18))',
-                } : undefined}
               />
             )}
             <div className="flex-1 min-w-0">

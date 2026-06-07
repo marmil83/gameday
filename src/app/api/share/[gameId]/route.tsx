@@ -20,12 +20,11 @@ function scoreLabel(s: number): string {
   if (s >= 4) return 'FAIR';
   return 'SKIP IT';
 }
-// Teams whose default logo is dark-on-transparent and vanishes on the
-// dark share image. Halo applied only to these. Keep in sync with the
-// matching set in GameCard.tsx.
-const DARK_LOGO_TEAMS = new Set<string>([
-  'New York Yankees',
-]);
+// Per-team logo overrides for teams whose default mark is dark-on-
+// transparent. Keep in sync with GameCard.tsx.
+const LOGO_OVERRIDES: Record<string, string> = {
+  'New York Yankees': 'https://a.espncdn.com/i/teamlogos/mlb/500-dark/nyy.png',
+};
 
 // Score → accent color (green great → amber fair → red skip)
 function scoreColor(s: number): string {
@@ -71,7 +70,8 @@ export async function GET(
 
   const score = Number(pick(game.scores as Rel<{ deal_score: number }>)?.deal_score ?? 0);
   const verdict = pick(game.game_insights as Rel<{ verdict: string }>)?.verdict ?? '';
-  const homeLogo = pick(game.home_team as Rel<{ logo_url: string | null }>)?.logo_url ?? null;
+  const rawHomeLogo = pick(game.home_team as Rel<{ logo_url: string | null }>)?.logo_url ?? null;
+  const homeLogo = LOGO_OVERRIDES[game.home_team_name] ?? rawHomeLogo;
   // Cheapest non-null price across snapshots
   const prices = (Array.isArray(game.pricing_snapshots) ? game.pricing_snapshots : [])
     .map((p: { lowest_price: number | null }) => p.lowest_price)
@@ -115,21 +115,7 @@ export async function GET(
         <div style={{ display: 'flex', alignItems: 'center', marginTop: 40, gap: 28 }}>
           {homeLogo ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={homeLogo}
-              width={96}
-              height={96}
-              style={{
-                objectFit: 'contain',
-                // Halo only for teams whose mark would otherwise vanish
-                // against the near-black background.
-                ...(DARK_LOGO_TEAMS.has(game.home_team_name) && {
-                  filter:
-                    'drop-shadow(0 0 1px rgba(255,255,255,0.95)) drop-shadow(0 0 3px rgba(255,255,255,0.55)) drop-shadow(0 0 10px rgba(255,255,255,0.18))',
-                }),
-              }}
-              alt=""
-            />
+            <img src={homeLogo} width={96} height={96} style={{ objectFit: 'contain' }} alt="" />
           ) : (
             <div style={{ width: 96, height: 96, borderRadius: 48, background: '#1c1c22', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#86868b', fontSize: 40, fontWeight: 700 }}>
               {game.home_team_name.charAt(0)}
