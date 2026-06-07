@@ -200,3 +200,46 @@ export function thresholdLabel(thresholdPct: number): string {
   if (thresholdPct <= 0) return 'any price drop';
   return `a drop of ${thresholdPct}% or more`;
 }
+
+interface WelcomeCtx {
+  matchupTitle: string;
+  thresholdLabel: string;
+  unsubscribeUrl: string;
+}
+
+// Sent INSTEAD of the confirm email when a visitor signs up using an
+// address that already has another confirmed alert in our DB. They've
+// proved deliverability once; making them click "confirm" again is
+// friction without security benefit. Includes the one-click unsub link
+// just like a price-drop email so they can back out instantly.
+export function welcomeEmail(ctx: WelcomeCtx): { subject: string; html: string; text: string } {
+  const subject = `You're watching ${ctx.matchupTitle}`;
+  const html = `<!doctype html><html><body style="margin:0;padding:0;background:#0a0a0d;font-family:${BRAND_FONT};">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0d;padding:32px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#15151c;border:1px solid rgba(255,255,255,0.06);border-radius:20px;">
+        <tr><td style="padding:32px;">
+          <div style="font-size:22px;font-weight:700;letter-spacing:-0.02em;color:#fafafa;">WorthGoing</div>
+          <div style="font-size:13px;color:#7a7a85;margin-top:4px;">New alert added</div>
+
+          <h1 style="font-size:24px;font-weight:700;color:#fafafa;letter-spacing:-0.02em;margin:28px 0 12px;line-height:1.2;">You're watching ${esc(ctx.matchupTitle)} ✓</h1>
+          <p style="font-size:15px;color:#9090a0;line-height:1.5;margin:0 0 24px;">
+            We'll email you on <strong style="color:#fafafa;">${esc(ctx.thresholdLabel)}</strong>. Since you've confirmed your email before, no extra step needed.
+          </p>
+
+          <p style="font-size:11px;color:#52525b;line-height:1.6;margin:32px 0 0;border-top:1px solid rgba(255,255,255,0.06);padding-top:16px;">
+            Don't want this one? <a href="${esc(ctx.unsubscribeUrl)}" style="color:#9090a0;text-decoration:underline;">Unsubscribe in one click</a>.
+          </p>
+        </td></tr>
+      </table>
+      <div style="font-size:11px;color:#52525b;margin-top:16px;">${SITE_URL.replace(/^https?:\/\//, '')}</div>
+    </td></tr>
+  </table>
+</body></html>`;
+  const text = `You're watching ${ctx.matchupTitle}.
+
+We'll email you on ${ctx.thresholdLabel}.
+
+Unsubscribe: ${ctx.unsubscribeUrl}`;
+  return { subject, html, text };
+}

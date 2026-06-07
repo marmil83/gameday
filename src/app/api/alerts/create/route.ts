@@ -10,7 +10,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { sendEmail, confirmEmail, thresholdLabel, SITE_URL } from '@/lib/email/brevo';
+import { sendEmail, confirmEmail, welcomeEmail, thresholdLabel, SITE_URL } from '@/lib/email/brevo';
 
 export const runtime = 'nodejs';
 
@@ -64,13 +64,27 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
   const baselinePrice = (snapshot?.lowest_price as number | null) ?? null;
 
+  // Has this email ever confirmed ANY alert? If so, treat them as a
+  // trusted address — new alerts go straight to status='active' with a
+  // welcome email (still includes one-click unsubscribe) instead of
+  // making them click "confirm" a second time. Industry standard
+  // (Substack, Tinyletter…) and friction-free for the visitor.
+  const { data: priorConfirmed } = await supabase
+    .from('price_alerts')
+    .select('id')
+    .eq('email', email)
+    .not('confirmed_at', 'is', null)
+    .limit(1)
+    .maybeSingle();
+  const isTrustedEmail = !!priorConfirmed;
+
   // Upsert: reuse the existing pending row for this (email, game) to
   // re-send the confirm if the visitor never confirmed. Active rows hit
   // the unique partial index — we surface them as "already watching"
   // without revealing whether the address is on file.
   const { data: existing } = await supabase
     .from('price_alerts')
-    .select('id, status, confirm_token')
+    .select('id, status, confirm_token, unsubscribe_token')
     .eq('email', email)
     .eq('game_id', gameId)
     .in('status', ['pending', 'active'])
@@ -78,17 +92,33 @@ export async function POST(req: NextRequest) {
 
   let alertId: string;
   let confirmToken: string;
+  let unsubscribeToken: string;
 
   if (existing?.status === 'active') {
     // Don't expose this — just behave like a successful re-signup.
-    return NextResponse.json({ ok: true, alreadyConfirmed: true });
+    return NextResponse.json({ ok: true, alreadyConfirmed: true, autoActivated: true });
   } else if (existing?.status === 'pending') {
     alertId = existing.id;
     confirmToken = existing.confirm_token as string;
-    await supabase
-      .from('price_alerts')
-      .update({ threshold_pct: thresholdPct, baseline_price: baselinePrice })
-      .eq('id', alertId);
+    unsubscribeToken = existing.unsubscribe_token as string;
+    // Trusted email rediscovering an old pending row? Promote to active
+    // and skip the confirm step.
+    if (isTrustedEmail) {
+      await supabase
+        .from('price_alerts')
+        .update({
+          threshold_pct: thresholdPct,
+          baseline_price: baselinePrice,
+          status: 'active',
+          confirmed_at: new Date().toISOString(),
+        })
+        .eq('id', alertId);
+    } else {
+      await supabase
+        .from('price_alerts')
+        .update({ threshold_pct: thresholdPct, baseline_price: baselinePrice })
+        .eq('id', alertId);
+    }
   } else {
     const { data: inserted, error: insertErr } = await supabase
       .from('price_alerts')
@@ -98,8 +128,10 @@ export async function POST(req: NextRequest) {
         threshold_pct: thresholdPct,
         baseline_price: baselinePrice,
         source: 'card-button',
+        // Trusted addresses are born active — no confirm round-trip.
+        ...(isTrustedEmail && { status: 'active', confirmed_at: new Date().toISOString() }),
       })
-      .select('id, confirm_token')
+      .select('id, confirm_token, unsubscribe_token')
       .single();
 
     if (insertErr || !inserted) {
@@ -107,22 +139,41 @@ export async function POST(req: NextRequest) {
     }
     alertId = inserted.id;
     confirmToken = inserted.confirm_token as string;
+    unsubscribeToken = inserted.unsubscribe_token as string;
   }
 
-  const confirmUrl = `${SITE_URL}/api/alerts/confirm?token=${confirmToken}`;
-  const { subject, html, text } = confirmEmail({
-    matchupTitle,
-    thresholdLabel: thresholdLabel(thresholdPct),
-    confirmUrl,
-  });
+  // Pick the right transactional email: confirm (first-time) or welcome
+  // (already-trusted address).
+  let mail: { subject: string; html: string; text: string };
+  if (isTrustedEmail) {
+    mail = welcomeEmail({
+      matchupTitle,
+      thresholdLabel: thresholdLabel(thresholdPct),
+      unsubscribeUrl: `${SITE_URL}/api/alerts/unsubscribe?token=${unsubscribeToken}`,
+    });
+  } else {
+    mail = confirmEmail({
+      matchupTitle,
+      thresholdLabel: thresholdLabel(thresholdPct),
+      confirmUrl: `${SITE_URL}/api/alerts/confirm?token=${confirmToken}`,
+    });
+  }
 
-  const result = await sendEmail({ to: email, subject, html, text });
+  const result = await sendEmail({
+    to: email,
+    subject: mail.subject,
+    html: mail.html,
+    text: mail.text,
+    // RFC-8058 one-click header only on the welcome email — confirm
+    // links shouldn't be unsubscribed via inbox button (they haven't
+    // confirmed yet).
+    ...(isTrustedEmail && {
+      unsubscribeUrl: `${SITE_URL}/api/alerts/unsubscribe?token=${unsubscribeToken}`,
+    }),
+  });
   if (!result.ok) {
-    // Don't leak the failure to the visitor — they'd just retry and
-    // create duplicate pendings. Log server-side; the row persists and
-    // can be retried by an admin tool later.
     console.error('[alerts/create] Brevo send failed:', result.error, { alertId });
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, autoActivated: isTrustedEmail });
 }

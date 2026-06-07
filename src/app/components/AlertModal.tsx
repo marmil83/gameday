@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 interface AlertModalProps {
   gameId: string;
@@ -22,23 +22,50 @@ export default function AlertModal({ gameId, matchupTitle, onClose, onSubscribed
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  // True when the server told us this email was already-confirmed and
+  // we activated the alert without sending a confirm link. Drives the
+  // success copy ("You're watching ✓" vs "Check your email").
+  const [autoActivated, setAutoActivated] = useState(false);
+  // Whether we've prefilled the email from localStorage — controls the
+  // "as <email> · change" line vs. the raw email input.
+  const [emailLocked, setEmailLocked] = useState(false);
+
+  // Prefill the saved email so returning visitors don't retype it. The
+  // backend also short-circuits to instant-activate for any email that's
+  // already confirmed an alert, so combined with this the second-time
+  // flow is: open modal → tap threshold (or accept default) → submit →
+  // done.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const saved = window.localStorage.getItem('wg_email');
+      if (saved) {
+        setEmail(saved);
+        setEmailLocked(true);
+      }
+    } catch { /* private mode etc. */ }
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
     try {
+      const finalEmail = email.trim().toLowerCase();
       const res = await fetch('/api/alerts/create', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ gameId, email: email.trim().toLowerCase(), thresholdPct: threshold }),
+        body: JSON.stringify({ gameId, email: finalEmail, thresholdPct: threshold }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data?.error || 'Could not save your alert. Try again?');
       }
-      // Tell the parent so the bell flips to "watching" persistently.
+      const data = await res.json().catch(() => ({}));
+      // Save the email for future signups so the visitor never retypes.
+      try { window.localStorage.setItem('wg_email', finalEmail); } catch {}
       onSubscribed();
+      setAutoActivated(!!data.autoActivated);
       setDone(true);
     } catch (err) {
       setError((err as Error).message);
@@ -64,11 +91,15 @@ export default function AlertModal({ gameId, matchupTitle, onClose, onSubscribed
               className="text-2xl tracking-tight"
               style={{ color: '#fafafa', fontFamily: 'var(--font-display)', fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1.15 }}
             >
-              {done ? "Check your email" : "Get price-drop alerts"}
+              {done
+                ? (autoActivated ? "You're watching ✓" : "Check your email")
+                : "Get price-drop alerts"}
             </h2>
             <p className="text-sm mt-1.5" style={{ color: '#9090a0' }}>
               {done
-                ? `We sent a confirmation to ${email}. Click the link to start watching ${matchupTitle}.`
+                ? (autoActivated
+                    ? `We'll email you when ${matchupTitle} tickets drop.`
+                    : `We sent a confirmation to ${email}. Click the link to start watching ${matchupTitle}.`)
                 : `We'll email you when ${matchupTitle} tickets drop. Unsubscribe anytime.`}
             </p>
           </div>
@@ -88,20 +119,42 @@ export default function AlertModal({ gameId, matchupTitle, onClose, onSubscribed
           <form onSubmit={handleSubmit} className="mt-6 space-y-4">
             <div>
               <label className="block text-[11px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: '#7a7a85' }}>Email</label>
-              <input
-                type="email"
-                required
-                autoComplete="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="w-full px-4 py-3 rounded-2xl text-sm focus:outline-none"
-                style={{
-                  background: '#1f1f28',
-                  color: '#fafafa',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                }}
-              />
+              {emailLocked ? (
+                // Returning visitor — show the saved email as a chip with a
+                // "change" button instead of forcing them to retype. Tapping
+                // change unlocks the input for editing (e.g. they want to
+                // route alerts for this game to a different inbox).
+                <div
+                  className="flex items-center justify-between gap-2 px-4 py-3 rounded-2xl text-sm"
+                  style={{ background: '#1f1f28', color: '#fafafa', border: '1px solid rgba(255,255,255,0.08)' }}
+                >
+                  <span className="truncate">{email}</span>
+                  <button
+                    type="button"
+                    onClick={() => setEmailLocked(false)}
+                    className="text-xs font-semibold underline shrink-0"
+                    style={{ color: '#9090a0' }}
+                  >
+                    Change
+                  </button>
+                </div>
+              ) : (
+                <input
+                  type="email"
+                  required
+                  autoFocus
+                  autoComplete="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="w-full px-4 py-3 rounded-2xl text-sm focus:outline-none"
+                  style={{
+                    background: '#1f1f28',
+                    color: '#fafafa',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                  }}
+                />
+              )}
             </div>
 
             <div>
