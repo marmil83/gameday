@@ -1,7 +1,9 @@
 {
   "crons": [
     { "path": "/api/pipeline/refresh-pricing",          "schedule": "30 1 * * *" },
+    { "path": "/api/cron/price-drop-alerts",            "schedule": "45 1 * * *" },
     { "path": "/api/pipeline/refresh-pricing",          "schedule": "30 5 * * *" },
+    { "path": "/api/cron/price-drop-alerts",            "schedule": "45 5 * * *" },
     { "path": "/api/pipeline/rescore",                  "schedule": "0 9 * * *" },
 
     { "path": "/api/pipeline/run?city=Detroit",         "schedule": "30 9 * * *" },
@@ -11,7 +13,9 @@
     { "path": "/api/pipeline/run?city=Chicago",         "schedule": "50 9 * * *" },
 
     { "path": "/api/pipeline/refresh-pricing",          "schedule": "30 13 * * *" },
+    { "path": "/api/cron/price-drop-alerts",            "schedule": "45 13 * * *" },
     { "path": "/api/pipeline/refresh-pricing",          "schedule": "30 17 * * *" },
+    { "path": "/api/cron/price-drop-alerts",            "schedule": "45 17 * * *" },
     { "path": "/api/pipeline/rescore",                  "schedule": "0 21 * * *" },
 
     { "path": "/api/pipeline/run?city=Detroit",         "schedule": "30 21 * * *" },
