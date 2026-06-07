@@ -84,16 +84,21 @@ export default function AlertModal({ gameId, matchupTitle, onClose, onSubscribed
       }}
     >
       <div
-        className="w-full max-w-md rounded-t-3xl sm:rounded-3xl px-7 pt-3 sm:pt-6"
+        className="w-full max-w-md rounded-t-3xl sm:rounded-3xl px-7 pt-3 sm:pt-6 overflow-y-auto overscroll-contain"
+        // maxHeight: 100dvh = dynamic viewport (iOS Safari shrinks this
+        // when the keyboard opens, so the modal stays inside the visible
+        // area instead of clipping at the top). overflow-y-auto turns the
+        // sheet body into a scrollable region when the form + keyboard
+        // exceeds the available height. overscroll-contain prevents
+        // pull-to-refresh on iOS from triggering when the user drags.
         // Bottom padding combines a normal 28px base + the device's safe-
-        // area inset (iPhone home-indicator) + an extra 24px so the green
-        // CTA stays above iOS Safari's floating "domain pill" that hovers
-        // over the viewport bottom and was eating the button in the
-        // screenshot.
+        // area inset + an extra 24px buffer for the iOS Safari URL pill
+        // that floats over the viewport bottom.
         style={{
           background: '#15151c',
           border: '1px solid rgba(255,255,255,0.06)',
           boxShadow: '0 30px 60px rgba(0,0,0,0.6)',
+          maxHeight: '100dvh',
           paddingBottom: 'calc(28px + env(safe-area-inset-bottom, 0px) + 24px)',
         }}
         onClick={e => e.stopPropagation()}

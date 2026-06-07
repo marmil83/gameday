@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 
@@ -19,6 +19,18 @@ const spaceGrotesk = Space_Grotesk({
 export const metadata: Metadata = {
   title: "WorthGoing — Games Worth Going To",
   description: "The easiest way to decide if a game is worth going to. Curated picks, real prices, honest recommendations.",
+};
+
+// `interactive-widget=resizes-content` tells iOS Safari to actually
+// SHRINK the viewport when the keyboard opens, instead of overlaying
+// it on top of fixed elements. Without this, modals with input fields
+// get clipped from the top because position:fixed doesn't track the
+// visualViewport — the alert sign-up modal hits this exact issue.
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  interactiveWidget: 'resizes-content',
+  themeColor: '#0a0a0d',
 };
 
 export default function RootLayout({
