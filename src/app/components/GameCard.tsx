@@ -694,12 +694,26 @@ export default function GameCard({ data, timezone }: { data: GameCardType; timez
     .sort((a, b) => (a.lowest_price ?? 999) - (b.lowest_price ?? 999))
     .map((s, i) => {
       const meta = SOURCE_DISPLAY[s.source_name];
+      // TickPick's per-event URLs (the ones our scraper saves to
+      // affiliate_url) hit their bot-defense screen for every visitor.
+      // Route TickPick rows to the team-page URL instead — same path
+      // the PARTNER_LINKS entry uses — which lands cleanly. The price
+      // data still comes from the per-event scrape; only the click
+      // destination is downgraded to the team schedule page.
+      let url: string;
+      if (s.source_name === 'tickpick') {
+        url = game.league === 'FIFA-WC'
+          ? 'https://www.tickpick.com/soccer/world-cup-soccer-tickets/'
+          : `https://www.tickpick.com/${teamSlug(game.home_team_name)}-tickets/`;
+      } else {
+        url = s.affiliate_url || game.affiliate_url || '#';
+      }
       return {
         key: s.source_name,
         favicon: meta.favicon,
         name: meta.label,
         price: Number(s.lowest_price) as number | null,
-        url: s.affiliate_url || game.affiliate_url || '#',
+        url,
         isAllin: meta.isAllin,
         capturedAt: s.captured_at ?? null,
         isCheapest: i === 0,
