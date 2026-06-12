@@ -647,9 +647,15 @@ export async function attachWCPricingForCity(
 
     for (const g of venueGames) {
       const gameMs = new Date(g.start_time).getTime();
-      const match = sgEvents.find(e =>
-        Math.abs(new Date(e.datetime_utc).getTime() - gameMs) < 15 * 60_000
-      );
+      const match = sgEvents.find(e => {
+        // SG returns datetime_utc without a Z suffix (e.g. "2026-06-13T01:00:00")
+        // which JS parses as LOCAL time, not UTC — that's an 8h offset on a
+        // Pacific machine. Append Z when missing so the comparison is honest.
+        const sgIso = /[Zz]$|[+-]\d{2}:?\d{2}$/.test(e.datetime_utc)
+          ? e.datetime_utc
+          : `${e.datetime_utc}Z`;
+        return Math.abs(new Date(sgIso).getTime() - gameMs) < 15 * 60_000;
+      });
       if (!match) { skipped++; continue; }
 
       // Persist the affiliate URL even when SG has no live price — it's

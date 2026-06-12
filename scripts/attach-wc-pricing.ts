@@ -13,7 +13,13 @@
 // snapshot is replaced (delete + insert keyed on game_id + source_name)
 // so running it twice doesn't double-write.
 
-import 'dotenv/config';
+// .env.local parsing — matches the pattern used by other scripts so we
+// don't depend on dotenv being installed.
+import { readFileSync } from 'fs';
+for (const line of readFileSync('.env.local', 'utf8').split('\n')) {
+  const m = line.match(/^([A-Z_]+)=(.*)$/);
+  if (m) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+}
 import { createClient } from '@supabase/supabase-js';
 import { attachWCPricingForCity } from '../src/lib/pipeline/espn-events';
 
