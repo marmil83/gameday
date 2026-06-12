@@ -92,9 +92,8 @@ const WC_PARTNER_URL: Record<string, (cityKey: 'nyc' | 'la') => string> = {
   SeatGeek:     (cityKey) => `https://seatgeek.com/fifa-world-cup-tickets/${cityKey}`,
   // Ticketmaster has FIFA as a performer with artist_id 4067734.
   Ticketmaster: () => 'https://www.ticketmaster.com/2026-world-cup-tickets/artist/4067734',
-  // TickPick removed — see comment on the disabled PARTNER_LINKS entry
-  // below. Their bot defense blocks every worthgoing.to visitor and
-  // their affiliate program is closed to new applicants.
+  // TickPick's all-WC soccer page.
+  TickPick:     () => 'https://www.tickpick.com/soccer/world-cup-soccer-tickets/',
 };
 
 const PARTNER_LINKS: PartnerLink[] = [
@@ -158,19 +157,17 @@ const PARTNER_LINKS: PartnerLink[] = [
       return `https://www.ticketmaster.com/discover/sports?keyword=${encodeURIComponent(home)}`;
     },
   },
-  // TickPick was previously listed here as an "all-in pricing" partner,
-  // but as of mid-2026 every visitor hitting their site from worthgoing.to
-  // gets caught by TickPick's bot defense ("Something's not right — we
-  // couldn't verify your session") regardless of referrer policy. Their
-  // affiliate program is closed to new applicants right now, so we have
-  // no trust-signal workaround to land users on a real page. Linking
-  // visitors at a bot-block page hurts trust more than the partner adds,
-  // so the row is removed until either (a) TickPick reopens affiliates,
-  // or (b) we find a redirect path their bot defense whitelists. The
-  // SOURCE_DISPLAY entry above is intentionally kept — if scraped TickPick
-  // pricing rows ever appear in the DB, they'll still show with the
-  // ALL-IN badge; the click-through just no-ops the row's affiliate_url
-  // until this situation changes.
+  {
+    // TickPick is an "all-in" pricing site — what you see is what you pay,
+    // no fees added at checkout. Shown as a partner link for every game
+    // where we don't have a live TickPick price. For WC, points at their
+    // dedicated 2026 World Cup page; for normal teams, the team page.
+    name: 'TickPick',
+    favicon: 'https://www.tickpick.com/favicon.ico',
+    getUrl: ({ home, league, venue }) => league === 'FIFA-WC'
+      ? WC_PARTNER_URL.TickPick(wcCitySlug(venue))
+      : `https://www.tickpick.com/${teamSlug(home)}-tickets/`,
+  },
 ];
 
 /** Relative time + freshness color from a captured_at ISO timestamp. */
