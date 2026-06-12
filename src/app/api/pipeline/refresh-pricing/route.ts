@@ -11,7 +11,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { attachSeatGeekPricingForCity } from '@/lib/pipeline/espn-events';
+import { attachSeatGeekPricingForCity, attachWCPricingForCity } from '@/lib/pipeline/espn-events';
 import { rescoreAllGames } from '@/lib/pipeline/rescore';
 import { enrichSingleGame } from '@/lib/pipeline/enrich';
 import { markCompletedAndRefreshDependents } from '@/lib/pipeline/post-game';
@@ -41,6 +41,15 @@ async function refreshPricing() {
     try {
       console.log(`[refresh-pricing] SeatGeek for ${city.name}`);
       await attachSeatGeekPricingForCity(city.id, 14);
+      // WC games don't have a seatgeek_slug on the home team (national
+      // teams aren't on SG as performers), so the team-iterating attach
+      // above skips them. This venue-based pass picks them up and writes
+      // both the affiliate_url and a pricing snapshot when SG ever
+      // surfaces a price. Cheap when there are no WC games for the city.
+      if (city.name === 'New York' || city.name === 'Los Angeles') {
+        const wc = await attachWCPricingForCity(city.id);
+        console.log(`[refresh-pricing] WC ${city.name}: matched=${wc.matched} skipped=${wc.skipped}`);
+      }
       cityResults.push({ city: city.name, status: 'ok' });
     } catch (err) {
       cityResults.push({ city: city.name, status: 'failed', error: String(err) });
